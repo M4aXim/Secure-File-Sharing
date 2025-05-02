@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Testing </title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    :root {
+      --sidebar-width: 240px;
+      --text-primary: #202124;
+      --text-secondary: #5f6368;
+      --border-light: #dadce0;
+      --hover-bg: #f1f3f4;
+    }
+    * { box-sizing: border-box; font-family: 'Google Sans', Roboto, Arial, sans-serif; }
+    body { margin: 0; background: #f5f7fa; color: var(--text-primary); display: flex; min-height: 100vh; }
+    .sidebar {
+      width: var(--sidebar-width);
+      background: #fff; border-right: 1px solid var(--border-light);
+      padding: 8px 0; flex-shrink: 0;
+    }
+    .new-folder {
+      margin: 8px 16px; background: #fff; color: var(--text-primary);
+      border: 1px solid var(--border-light); border-radius: 24px;
+      padding: 12px 24px; font-size: 14px; font-weight: 500;
+      cursor: pointer; display: flex; align-items: center;
+    }
+    .new-folder:hover { background: var(--hover-bg); }
+    .new-folder .icon { margin-right: 12px; font-size: 20px; }
+    .nav-item {
+      display: flex; align-items: center;
+      padding: 8px 16px 8px 24px; font-size: 14px;
+      color: var(--text-primary); cursor: pointer; margin: 2px 0;
+    }
+    .nav-item .icon { width: 24px; margin-right: 18px; text-align: center; color: var(--text-secondary); }
+    .nav-item:hover { background: var(--hover-bg); }
+    .nav-item.active { background: #e8f0fe; color: #1a73e8; }
+    .nav-item.active .icon { color: #1a73e8; }
+    .main-content {
+      flex-grow: 1; padding: 24px; background: #fff;
+    }
+    .folder-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px; margin-top: 24px;
+    }
+    .folder-item {
+      flex-direction: column; align-items: center;
+      padding: 16px; border: 1px solid var(--border-light);
+      border-radius: 8px; cursor: pointer; transition: background 0.2s;
+      display: flex;
+    }
+    .folder-item:hover { background: var(--hover-bg); }
+    .folder-icon { font-size: 48px; color: #fbbc04; margin-bottom: 8px; }
+    .folder-name {
+      font-size: 14px; text-align: center;
+      word-break: break-word; max-width: 100%;
+    }
+    /* Modal */
+    .modal {
+      display: none; position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      justify-content: center; align-items: center;
+    }
+    .modal-content {
+      background: #fff; padding: 24px; border-radius: 8px; width: 400px;
+    }
+    .modal-title { font-size: 20px; margin-bottom: 16px; }
+    .modal-input {
+      width: 100%; padding: 8px 12px;
+      border: 1px solid var(--border-light);
+      border-radius: 4px; margin-bottom: 16px; font-size: 14px;
+    }
+    .modal-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+    .modal-button {
+      padding: 8px 16px; border-radius: 4px; font-size: 14px; cursor: pointer;
+    }
+    .modal-button.cancel {
+      background: transparent; border: 1px solid var(--border-light);
+    }
+    .modal-button.create {
+      background: #1a73e8; color: #fff; border: none;
+    }
+
+    /* ===== Folder View Styles ===== */
+    body.folder-view-active { flex-direction: column; }
+    .section { flex-grow: 1; }
+    .content-box {
+      background: rgba(255,255,255,0.95); padding: 2rem;
+      border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+      margin: 3rem auto; max-width: 900px; transition: all 0.3s ease;
+    }
+    .content-box:hover { box-shadow: 0 12px 28px rgba(0,0,0,0.15); }
+    footer { padding: 1.5rem; background: rgba(255,255,255,0.8); text-align: center; color: #555; font-weight: 500; }
+    .file-item {
+      display: flex; align-items: center;
+      padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem;
+      background: #f9f9f9; transition: all 0.2s ease;
+    }
+    .file-item:hover { background: #f0f0f0; transform: translateY(-2px); }
+    .file-icon { margin-right: 1rem; font-size: 1.2rem; width: 24px; text-align: center; color: #4a6fa5; }
+    .file-info { flex-grow: 1; display: flex; justify-content: space-between; align-items: center; }
+    .file-name { font-weight: 500; color: #333; }
+    .file-meta { color: #777; font-size: 0.85rem; }
+    .file-actions { display: flex; gap: 0.5rem; }
+    .empty-folder { text-align: center; padding: 3rem 1rem; color: #888; }
+    .drop-zone {
+      border: 2px dashed #4a6fa5; border-radius: 8px;
+      padding: 2rem; text-align: center; margin-bottom: 2rem;
+      transition: all 0.3s ease; background: rgba(74,111,165,0.05);
+    }
+    .drop-zone.active { background: rgba(74,111,165,0.15); border-color: #3273dc; }
+    .progress-container { display: none; margin-top: 1rem; }
+    .notification { position: fixed; top: 20px; right: 20px; z-index:1000;
+      padding: 1rem; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.15);
+      transform: translateY(-100px); opacity:0; transition: all 0.3s ease;
+    }
+    .notification.show { transform: translateY(0); opacity:1; }
+    .loading-spinner {
+      display: none; margin: 0 auto; width: 40px; height: 40px;
+      border: 4px solid rgba(74,111,165,0.3); border-radius:50%;
+      border-top-color: #3273dc; animation: spin 1s ease-in-out infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+
+<body>
+  <!-- Dashboard Page -->
+  <div id="dashboardPage">
+    <aside class="sidebar">
+      <button class="new-folder" onclick="showCreateFolderModal()">
+        <span class="icon"><i class="fas fa-folder-plus"></i></span>
+        <span>Make a folder</span>
+      </button>
+      <div class="nav-item">
+        <span class="icon"><i class="fas fa-home"></i></span><span>Home</span>
+      </div>
+      <div class="nav-item active" onclick="showMyDrive()">
+        <span class="icon"><i class="fas fa-hdd"></i></span><span>My Drive</span>
+      </div>
+      <div class="nav-item">
+        <span class="icon"><i class="fas fa-user-friends"></i></span><span>Shared with me</span>
+      </div>
+    </aside>
+    <main class="main-content">
+      <div class="folder-grid" id="folderGrid">
+        <!-- Dashboard: folder thumbnails -->
+      </div>
+    </main>
+
+    <!-- Create Folder Modal -->
+    <div class="modal" id="createFolderModal">
+      <div class="modal-content">
+        <div class="modal-title">Create new folder</div>
+        <input type="text" class="modal-input" id="folderNameInput" placeholder="Folder name">
+        <div class="modal-buttons">
+          <button class="modal-button cancel" onclick="hideCreateFolderModal()">Cancel</button>
+          <button class="modal-button create" onclick="createFolder()">Create</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Folder View Page -->
+  <div id="folderPage" style="display:none; flex-direction: column; min-height:100vh;">
+    <section class="section">
+      <div class="container">
+        <div class="content-box">
+          <button class="button is-light mb-4" onclick="backToDashboard()">
+            <span class="icon"><i class="fas fa-arrow-left"></i></span>
+            <span>Back to Dashboard</span>
+          </button>
+          <h1 class="title is-3 has-text-primary">
+            <i class="fas fa-folder-open mr-2"></i> Folder Contents
+          </h1>
+          <p class="subtitle is-6 has-text-grey">
+            Folder ID: <span id="folderId" class="has-text-weight-bold"></span>
+          </p>
+
+          <div class="drop-zone" id="dropZone">
+            <i class="fas fa-cloud-upload-alt fa-3x mb-3"></i>
+            <p class="is-size-5 mb-2">Drag & drop files here</p>
+            <p class="is-size-7 has-text-grey">or</p>
+            <div class="file has-name is-centered my-3">
+              <label class="file-label">
+                <input class="file-input" type="file" id="fileInput" name="file">
+                <span class="file-cta">
+                  <span class="file-icon"><i class="fas fa-upload"></i></span>
+                  <span class="file-label">Choose a file…</span>
+                </span>
+                <span class="file-name" id="fileName">No file selected</span>
+              </label>
+            </div>
+            <button class="button is-primary is-small" id="uploadButton" disabled>
+              <span class="icon"><i class="fas fa-upload"></i></span>
+              <span>Upload</span>
+            </button>
+            <div class="progress-container" id="progressContainer">
+              <progress class="progress is-primary" id="uploadProgress" value="0" max="100"></progress>
+              <p class="has-text-centered is-size-7 has-text-grey" id="progressText">0%</p>
+            </div>
+          </div>
+
+          <div class="is-flex is-justify-content-space-between is-align-items-center mb-4">
+            <h2 class="title is-5">Files</h2>
+            <div class="field has-addons">
+              <div class="control">
+                <input class="input is-small" type="text" id="searchInput" placeholder="Search files...">
+              </div>
+              <div class="control">
+                <button class="button is-primary is-small" id="refreshButton">
+                  <span class="icon"><i class="fas fa-sync-alt"></i></span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div id="loadingSpinner" class="loading-spinner my-5"></div>
+          <div id="folderContents" class="mb-4"></div>
+        </div>
+      </div>
+    </section>
+    <div class="notification is-success" id="notificationSuccess">
+      <button class="delete" id="closeNotification"></button>
+      <span id="notificationText"></span>
+    </div>
+    <footer>
+      <p><strong>FileShare</strong> &copy; 2025 | Made with <i class="fas fa-heart has-text-danger"></i> by Maksim</p>
+    </footer>
+  </div>
+
+  <script>
+    let currentFolderId = null;
+
+    // Authentication & Initialization
+    document.addEventListener('DOMContentLoaded', () => {
+      const token = localStorage.getItem('jwtToken');
+      if (!token) return window.location.href = '/index.html';
+
+      // verify on server
+      fetch('http://localhost:3000/api/verify-token', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => {
+        if (!res.ok) {
+          localStorage.removeItem('jwtToken');
+          window.location.href = '/index.html';
+        } else {
+          showMyDrive();
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('jwtToken');
+        window.location.href = '/index.html';
+      });
+    });
+
+    /* ===== Dashboard Functions ===== */
+    function showCreateFolderModal() {
+      document.getElementById('createFolderModal').style.display = 'flex';
+      document.getElementById('folderNameInput').focus();
+    }
+    function hideCreateFolderModal() {
+      document.getElementById('createFolderModal').style.display = 'none';
+      document.getElementById('folderNameInput').value = '';
+    }
+    async function createFolder() {
+      const name = document.getElementById('folderNameInput').value.trim();
+      if (!name) return;
+      const token = localStorage.getItem('jwtToken');
+      const res = await fetch('http://localhost:3000/api/create-folder', {
+        method: 'POST',
+        headers: {
+          'Content-Type':'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ folderName: name })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        hideCreateFolderModal();
+        showMyDrive();
+      } else {
+        alert(data.message || 'Error creating folder');
+      }
+    }
+    async function showMyDrive() {
+      // show dashboard, hide folder view
+      document.getElementById('dashboardPage').style.display = 'flex';
+      document.getElementById('folderPage').style.display = 'none';
+      document.body.classList.remove('folder-view-active');
+
+      const token = localStorage.getItem('jwtToken');
+      const res = await fetch('http://localhost:3000/api/folders', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const folders = await res.json();
+      const grid = document.getElementById('folderGrid');
+      grid.innerHTML = folders.map(f => `
+        <div class="folder-item" onclick="openFolder('${f.folderId}')">
+          <div class="folder-icon"><i class="fas fa-folder"></i></div>
+          <div class="folder-name">${f.folderName.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        </div>
+      `).join('');
+    }
+    function openFolder(folderId) {
+      currentFolderId = folderId;
+      document.getElementById('folderId').textContent = folderId;
+      document.getElementById('dashboardPage').style.display = 'none';
+      document.getElementById('folderPage').style.display = 'flex';
+      document.body.classList.add('folder-view-active');
+      fetchFolderContents();
+    }
+    function backToDashboard() {
+      showMyDrive();
+    }
+
+    /* ===== Folder View Functions ===== */
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024, sizes = ['Bytes','KB','MB','GB','TB'];
+      const i = Math.floor(Math.log(bytes)/Math.log(k));
+      return parseFloat((bytes/Math.pow(k,i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    function formatDate(dateStr) {
+      return new Date(dateStr).toLocaleString();
+    }
+    function getFileIcon(ext) {
+      const map = {
+        '.pdf':'fa-file-pdf','.doc':'fa-file-word','.docx':'fa-file-word',
+        '.xls':'fa-file-excel','.xlsx':'fa-file-excel','.ppt':'fa-file-powerpoint',
+        '.pptx':'fa-file-powerpoint','.jpg':'fa-file-image','.jpeg':'fa-file-image',
+        '.png':'fa-file-image','.gif':'fa-file-image','.txt':'fa-file-alt',
+        '.zip':'fa-file-archive','.rar':'fa-file-archive','.mp3':'fa-file-audio',
+        '.mp4':'fa-file-video','.html':'fa-file-code','.css':'fa-file-code',
+        '.js':'fa-file-code'
+      };
+      return map[ext]||'fa-file';
+    }
+    function showNotification(msg, type='is-success') {
+      const n = document.getElementById('notificationSuccess');
+      n.className = `notification ${type} show`;
+      document.getElementById('notificationText').textContent = msg;
+      setTimeout(() => n.classList.remove('show'), 5000);
+    }
+    document.getElementById('closeNotification').addEventListener('click', () => {
+      document.getElementById('notificationSuccess').classList.remove('show');
+    });
+
+    async function fetchFolderContents() {
+      const token = localStorage.getItem('jwtToken');
+      const cont = document.getElementById('folderContents');
+      const spinner = document.getElementById('loadingSpinner');
+      spinner.style.display = 'block';
+      cont.innerHTML = '';
+      try {
+        const res = await fetch(`http://localhost:3000/api/folder-contents?folderID=${currentFolderId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const files = await res.json();
+        spinner.style.display = 'none';
+        if (!res.ok) cont.innerHTML = `<div class="notification is-warning">${files.message||'Error'}</div>`;
+        else if (files.length === 0) cont.innerHTML = `
+          <div class="empty-folder">
+            <i class="fas fa-folder-open fa-3x mb-3" style="color:#ddd;"></i>
+            <p>This folder is empty</p>
+            <p class="is-size-7 has-text-grey">Upload files to get started</p>
+          </div>`;
+        else {
+          cont.innerHTML = files.map((f,i)=> {
+            const name = f.filename||`File ${i}`;
+            const ext = (f.type||'').toLowerCase();
+            return `
+              <div class="file-item" data-filename="${name}">
+                <div class="file-icon"><i class="fas ${getFileIcon(ext)}"></i></div>
+                <div class="file-info">
+                  <span class="file-name">${name}</span>
+                  <div class="file-meta">
+                    <span class="file-size">${formatFileSize(f.size||0)}</span>
+                    <span class="file-date">${formatDate(f.modified||new Date())}</span>
+                  </div>
+                </div>
+                <div class="file-actions">
+                  <button class="button is-small is-info download-button" data-filename="${name}">
+                    <span class="icon"><i class="fas fa-download"></i></span>
+                  </button>
+                  <button class="button is-small is-danger delete-button" data-filename="${name}">
+                    <span class="icon"><i class="fas fa-trash-alt"></i></span>
+                  </button>
+                </div>
+              </div>`;
+          }).join('');
+          // bind buttons
+          document.querySelectorAll('.download-button').forEach(b=>
+            b.addEventListener('click', ()=>downloadFile(b.dataset.filename))
+          );
+          document.querySelectorAll('.delete-button').forEach(b=>
+            b.addEventListener('click', ()=>deleteFile(b.dataset.filename))
+          );
+        }
+      } catch(err) {
+        spinner.style.display = 'none';
+        cont.innerHTML = `<div class="notification is-danger">Error: ${err.message}</div>`;
+      }
+    }
+
+    async function downloadFile(name) {
+      const token = localStorage.getItem('jwtToken');
+      try {
+        const tokenRes = await fetch(`http://localhost:3000/api/generate-download-token?folderID=${currentFolderId}&filename=${encodeURIComponent(name)}`, {
+          headers:{ 'Authorization':`Bearer ${token}` }
+        });
+        const { token:dlToken } = await tokenRes.json();
+        const res = await fetch(`http://localhost:3000/api/download-file?token=${dlToken}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name; document.body.append(a); a.click();
+        URL.revokeObjectURL(url); a.remove();
+        showNotification(`Downloaded ${name}`);
+      } catch(err) { showNotification(`Download failed: ${err.message}`, 'is-danger'); }
+    }
+
+    async function deleteFile(name) {
+      if (!confirm(`Delete ${name}?`)) return;
+      const token = localStorage.getItem('jwtToken');
+      try {
+        const res = await fetch(`http://localhost:3000/api/delete-file/${currentFolderId}/${encodeURIComponent(name)}`, {
+          method:'DELETE', headers:{ 'Authorization':`Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (res.ok) { showNotification(data.message||'Deleted'); fetchFolderContents(); }
+        else showNotification(data.message||'Error', 'is-danger');
+      } catch(err) { showNotification(`Error: ${err.message}`, 'is-danger'); }
+    }
+
+    // Upload & Drag-drop
+    const fileInput = document.getElementById('fileInput'),
+          fileNameEl = document.getElementById('fileName'),
+          uploadBtn = document.getElementById('uploadButton'),
+          dropZone = document.getElementById('dropZone'),
+          progressContainer = document.getElementById('progressContainer'),
+          uploadProgress = document.getElementById('uploadProgress'),
+          progressText = document.getElementById('progressText'),
+          refreshBtn = document.getElementById('refreshButton'),
+          searchInput = document.getElementById('searchInput');
+
+    fileInput.addEventListener('change', () => {
+      const f = fileInput.files[0];
+      fileNameEl.textContent = f ? f.name : 'No file selected';
+      uploadBtn.disabled = !f;
+    });
+    uploadBtn.addEventListener('click', uploadFile);
+    refreshBtn.addEventListener('click', fetchFolderContents);
+    searchInput.addEventListener('input', () => {
+      const term = searchInput.value.toLowerCase();
+      document.querySelectorAll('.file-item').forEach(item => {
+        item.style.display = item.querySelector('.file-name').textContent.toLowerCase().includes(term)
+          ? 'flex' : 'none';
+      });
+    });
+
+    ['dragenter','dragover','dragleave','drop'].forEach(evt =>
+      dropZone.addEventListener(evt, e=>{ e.preventDefault(); e.stopPropagation(); })
+    );
+    ['dragenter','dragover'].forEach(evt =>
+      dropZone.addEventListener(evt, ()=>dropZone.classList.add('active'))
+    );
+    ['dragleave','drop'].forEach(evt =>
+      dropZone.addEventListener(evt, ()=>dropZone.classList.remove('active'))
+    );
+    dropZone.addEventListener('drop', e => {
+      const files = e.dataTransfer.files;
+      if (files.length) {
+        fileInput.files = files;
+        fileNameEl.textContent = files[0].name;
+        uploadBtn.disabled = false;
+      }
+    });
+
+    function uploadFile() {
+      const token = localStorage.getItem('jwtToken'), file = fileInput.files[0];
+      if (!file) return showNotification('Select a file', 'is-warning');
+      const form = new FormData();
+      form.append('file', file);
+      uploadBtn.classList.add('is-loading');
+      progressContainer.style.display = 'block';
+      const xhr = new XMLHttpRequest();
+      xhr.upload.addEventListener('progress', ev => {
+        if (ev.lengthComputable) {
+          const pct = Math.round(ev.loaded/ev.total*100);
+          uploadProgress.value = pct; progressText.textContent = pct+'%';
+        }
+      });
+      xhr.onload = () => {
+        uploadBtn.classList.remove('is-loading');
+        progressContainer.style.display = 'none';
+        fileInput.value = ''; fileNameEl.textContent = 'No file selected'; uploadBtn.disabled = true;
+        const res = JSON.parse(xhr.responseText);
+        if (xhr.status===200) { showNotification(res.message||'Uploaded'); fetchFolderContents(); }
+        else showNotification(res.message||'Error uploading','is-danger');
+      };
+      xhr.onerror = () => {
+        showNotification('Network error','is-danger');
+        uploadBtn.classList.remove('is-loading');
+        progressContainer.style.display = 'none';
+      };
+      xhr.open('POST', `http://localhost:3000/api/upload-file/${currentFolderId}`, true);
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.send(form);
+    }
+  </script>
+</body>
+</html>
+<p><strong>2025-05-02 16:45:20</strong>: <code>UL</code> in <em>● .gitignore - Secure File Sharing - Visual Studio Code</em></p>
+<p><strong>2025-05-02 16:45:50</strong>: <code>RR</code> in <em>.gitignore - Secure File Sharing - Visual Studio Code</em></p>
+<p><strong>2025-05-02 16:46:20</strong>: <code>LL</code> in <em>ChatGPT - Google Chrome</em></p>
+<p><strong>2025-05-02 16:46:50</strong>: <code>JE</code> in <em>Remove file from staging - Google Chrome</em></p>
+<p><strong>2025-05-02 16:47:20</strong>: <code>IZ</code> in <em>Remove file from staging - Google Chrome</em></p>

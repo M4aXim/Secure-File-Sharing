@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FileShare - Secure File Sharing</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --primary-color: #4285F4;
+      --secondary-color: #34A853;
+      --accent-color: #EA4335;
+      --light-gray: #F5F5F5;
+    }
+    
+    body {
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .hidden {
+      display: none;
+    }
+    
+    .hero {
+      background-color: rgba(255, 255, 255, 0.9);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+      margin-bottom: 2rem;
+    }
+    
+    .form-card {
+      max-width: 480px;
+      margin: 0 auto;
+      background-color: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+      transition: all 0.3s ease;
+    }
+    
+    .form-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+    
+    footer {
+      margin-top: auto;
+      padding: 1.5rem;
+      background-color: rgba(255, 255, 255, 0.8);
+      text-align: center;
+      color: #555;
+      font-weight: 500;
+    }
+    
+    .button {
+      border-radius: 25px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+    
+    .button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    .button.is-primary {
+      background-color: var(--primary-color);
+    }
+    
+    .button.is-link {
+      background-color: var(--secondary-color);
+    }
+    
+    .button.is-success {
+      background-color: var(--secondary-color);
+    }
+    
+    .input {
+      border-radius: 6px;
+      box-shadow: none;
+      transition: all 0.3s ease;
+    }
+    
+    .input:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+    }
+    
+    .feature-card {
+      height: 100%;
+      transition: all 0.3s ease;
+    }
+    
+    .feature-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    }
+    
+    .feature-icon {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      color: var(--primary-color);
+    }
+    
+    .modal-card {
+      border-radius: 10px;
+      max-width: 480px;
+    }
+    
+    .form-note {
+      font-size: 0.85rem;
+      color: #777;
+      text-align: center;
+      margin-top: 1rem;
+    }
+    
+    .field-icon {
+      color: #BBB;
+    }
+  </style>
+</head>
+<body>
+  <section class="section py-6">
+    <div class="container">
+      <!-- Hero Section -->
+      <div class="hero p-5 mb-6">
+        <div class="hero-body">
+          <div class="columns is-vcentered">
+            <div class="column">
+              <h1 class="title is-2 has-text-primary">
+                <i class="fas fa-cloud-upload-alt mr-2"></i>FileShare
+              </h1>
+              <p class="subtitle is-4 mt-3">Secure and simple file sharing for everyone</p>
+              <p class="is-size-5 mt-4 has-text-grey">
+                Share files with ease, access from anywhere, and keep your data secure.
+              </p>
+              <div class="buttons mt-5">
+                <button class="button is-primary is-medium px-5" onclick="showForm('login')">
+                  <span class="icon"><i class="fas fa-sign-in-alt"></i></span>
+                  <span>Login</span>
+                </button>
+                <button class="button is-link is-medium px-5" onclick="showForm('register')">
+                  <span class="icon"><i class="fas fa-user-plus"></i></span>
+                  <span>Create Account</span>
+                </button>
+              </div>
+            </div>
+            <div class="column is-hidden-mobile">
+              <img src="/api/placeholder/500/400" alt="File sharing illustration" />
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Forms -->
+      <div id="login-form" class="form-card p-5 hidden">
+        <h2 class="title is-4 has-text-centered">Welcome Back</h2>
+        <p class="subtitle is-6 has-text-centered has-text-grey mb-5">Log in to access your files</p>
+        
+        <form id="loginForm">
+          <div class="field">
+            <label class="label">Username</label>
+            <div class="control has-icons-left">
+              <input class="input" type="text" placeholder="Enter your username" required>
+              <span class="icon is-small is-left field-icon">
+                <i class="fas fa-user"></i>
+              </span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label">Password</label>
+            <div class="control has-icons-left">
+              <input class="input" type="password" placeholder="Enter your password" required>
+              <span class="icon is-small is-left field-icon">
+                <i class="fas fa-lock"></i>
+              </span>
+            </div>
+            <p class="help has-text-right">
+              <a href="#" class="has-text-grey">Forgot password?</a>
+            </p>
+          </div>
+
+          <div class="field mt-5">
+            <div class="control">
+              <button class="button is-primary is-fullwidth" type="button" onclick="login()">
+                <span class="icon"><i class="fas fa-sign-in-alt"></i></span>
+                <span>Login</span>
+              </button>
+            </div>
+          </div>
+          
+          <p class="form-note mt-4">
+            Don't have an account? <a href="#" onclick="showForm('register')">Register here</a>
+          </p>
+        </form>
+      </div>
+
+      <div id="register-form" class="form-card p-5 hidden">
+        <h2 class="title is-4 has-text-centered">Create an Account</h2>
+        <p class="subtitle is-6 has-text-centered has-text-grey mb-5">Join our secure file sharing platform</p>
+        
+        <form id="registerForm">
+          <div class="field">
+            <label class="label">Username</label>
+            <div class="control has-icons-left">
+              <input class="input" type="text" placeholder="Choose a username" required>
+              <span class="icon is-small is-left field-icon">
+                <i class="fas fa-user"></i>
+              </span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label">Email</label>
+            <div class="control has-icons-left">
+              <input class="input" type="email" placeholder="Enter your email" required>
+              <span class="icon is-small is-left field-icon">
+                <i class="fas fa-envelope"></i>
+              </span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label">Password</label>
+            <div class="control has-icons-left">
+              <input class="input" type="password" placeholder="Create a strong password" required>
+              <span class="icon is-small is-left field-icon">
+                <i class="fas fa-lock"></i>
+              </span>
+            </div>
+            <p class="help is-size-7">Password must be at least 8 characters</p>
+          </div>
+
+          <div class="field mt-5">
+            <div class="control">
+              <button class="button is-link is-fullwidth" type="button" onclick="register()">
+                <span class="icon"><i class="fas fa-user-plus"></i></span>
+                <span>Create Account</span>
+              </button>
+            </div>
+          </div>
+          
+          <p class="form-note mt-4">
+            Already have an account? <a href="#" onclick="showForm('login')">Login here</a>
+          </p>
+        </form>
+      </div>
+      
+      <!-- Features Section -->
+      <div class="features mt-6">
+        <h2 class="title is-3 has-text-centered mb-6">Why Choose FileShare?</h2>
+        <div class="columns is-multiline">
+          <div class="column is-4">
+            <div class="box feature-card p-5">
+              <div class="has-text-centered">
+                <span class="feature-icon">
+                  <i class="fas fa-shield-alt"></i>
+                </span>
+                <h3 class="title is-4">Secure Storage</h3>
+                <p class="has-text-grey">Your files are encrypted and stored safely on our servers.</p>
+              </div>
+            </div>
+          </div>
+          <div class="column is-4">
+            <div class="box feature-card p-5">
+              <div class="has-text-centered">
+                <span class="feature-icon">
+                  <i class="fas fa-bolt"></i>
+                </span>
+                <h3 class="title is-4">Fast Transfers</h3>
+                <p class="has-text-grey">Upload and download files at lightning-fast speeds.</p>
+              </div>
+            </div>
+          </div>
+          <div class="column is-4">
+            <div class="box feature-card p-5">
+              <div class="has-text-centered">
+                <span class="feature-icon">
+                  <i class="fas fa-share-alt"></i>
+                </span>
+                <h3 class="title is-4">Easy Sharing</h3>
+                <p class="has-text-grey">Share files with anyone using simple links or direct invites.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div>
+      <p><strong>FileShare</strong> &copy; 2025 | Made with <i class="fas fa-heart has-text-danger"></i> by Maksim</p>
+      <div class="mt-3">
+        <a href="privacy.html" class="has-text-grey mr-3">Privacy Policy</a>
+        <a href="TOS.html" class="has-text-grey mr-3">Terms of Service</a>
+        <a href="contact.html" class="has-text-grey">Contact Us</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    function showForm(formId) {
+      document.getElementById('login-form').classList.add('hidden');
+      document.getElementById('register-form').classList.add('hidden');
+      document.getElementById(formId + '-form').classList.remove('hidden');
+      
+      // Smooth scroll to form
+      document.getElementById(formId + '-form').scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    function register() {
+      const username = document.querySelector('#register-form input[type="text"]').value;
+      const email = document.querySelector('#register-form input[type="email"]').value;
+      const password = document.querySelector('#register-form input[type="password"]').value;
+      
+      if (!username || !email || !password) {
+        showNotification('Please fill in all fields', 'is-danger');
+        return;
+      }
+      
+      if (password.length < 8) {
+        showNotification('Password must be at least 8 characters', 'is-danger');
+        return;
+      }
+      
+      fetch('http://localhost:3000/api/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, email, password })
+      })
+      .then(response => {
+        if (response.ok) {
+          showNotification('Registration successful! Please log in.', 'is-success');
+          setTimeout(() => {
+            showForm('login');
+          }, 2000);
+        } else {
+          showNotification('Registration failed. Please try again.', 'is-danger');
+        }
+      })
+      .catch(error => {
+        showNotification('Connection error. Please try again later.', 'is-danger');
+      });
+    }
+    
+    function login() {
+      const username = document.querySelector('#login-form input[type="text"]').value;
+      const password = document.querySelector('#login-form input[type="password"]').value;
+      
+      if (!username || !password) {
+        showNotification('Please fill in all fields', 'is-danger');
+        return;
+      }
+      
+      fetch('http://localhost:3000/api/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ username, password })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.token) {
+          // Store the token in localStorage
+          localStorage.setItem('jwtToken', data.token);
+          showNotification('Login successful! Redirecting...', 'is-success');
+          setTimeout(() => {
+            window.location.href = '/dashboard.html';
+          }, 1500);
+        } else {
+          showNotification('Invalid username or password', 'is-danger');
+        }
+      })
+      .catch(error => {
+        showNotification('Connection error. Please try again later.', 'is-danger');
+      });
+    }
+    
+    function showNotification(message, type) {
+      const existingNotifications = document.querySelectorAll('.notification');
+      existingNotifications.forEach(notification => {
+        notification.remove();
+      });
+      
+      const notification = document.createElement('div');
+      notification.className = `notification ${type} is-light`;
+      notification.style.position = 'fixed';
+      notification.style.top = '20px';
+      notification.style.right = '20px';
+      notification.style.maxWidth = '300px';
+      notification.style.zIndex = '1000';
+      notification.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+      notification.style.borderRadius = '6px';
+      
+      // Add close button
+      const closeButton = document.createElement('button');
+      closeButton.className = 'delete';
+      closeButton.addEventListener('click', () => {
+        notification.remove();
+      });
+      
+      notification.appendChild(closeButton);
+      notification.appendChild(document.createTextNode(message));
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+        notification.remove();
+      }, 4000);
+    }
+  </script>
+</body>
+</html>

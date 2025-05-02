@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Folder View - FileShare</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body {
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .content-box {
+      background-color: rgba(255, 255, 255, 0.95);
+      padding: 2rem;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+      margin: 3rem auto;
+      max-width: 900px;
+      transition: all 0.3s ease;
+    }
+    .content-box:hover {
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15);
+    }
+    footer {
+      margin-top: auto;
+      padding: 1.5rem;
+      background-color: rgba(255, 255, 255, 0.8);
+      text-align: center;
+      color: #555;
+      font-weight: 500;
+    }
+    .file-item {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem;
+      border-radius: 6px;
+      margin-bottom: 0.5rem;
+      background-color: #f9f9f9;
+      transition: all 0.2s ease;
+    }
+    .file-item:hover {
+      background-color: #f0f0f0;
+      transform: translateY(-2px);
+    }
+    .file-icon {
+      margin-right: 1rem;
+      color: #4a6fa5;
+      font-size: 1.2rem;
+      width: 24px;
+      text-align: center;
+    }
+    .file-info {
+      flex-grow: 1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .file-name {
+      font-weight: 500;
+      color: #333;
+    }
+    .file-meta {
+      color: #777;
+      font-size: 0.85rem;
+    }
+    .file-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .empty-folder {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: #888;
+    }
+    .drop-zone {
+      border: 2px dashed #4a6fa5;
+      border-radius: 8px;
+      padding: 2rem;
+      text-align: center;
+      margin-bottom: 2rem;
+      transition: all 0.3s ease;
+      background-color: rgba(74, 111, 165, 0.05);
+    }
+    .drop-zone.active {
+      background-color: rgba(74, 111, 165, 0.15);
+      border-color: #3273dc;
+    }
+    .progress-container {
+      display: none;
+      margin-top: 1rem;
+    }
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      padding: 1rem;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transform: translateY(-100px);
+      opacity: 0;
+      transition: all 0.3s ease;
+    }
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    .loading-spinner {
+      display: none;
+      margin: 0 auto;
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(74, 111, 165, 0.3);
+      border-radius: 50%;
+      border-top-color: #3273dc;
+      animation: spin 1s ease-in-out infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .file-size {
+      white-space: nowrap;
+      margin-left: 1rem;
+    }
+    .file-date {
+      white-space: nowrap;
+      margin-left: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <section class="section">
+    <div class="container">
+      <div class="content-box">
+        <h1 class="title is-3 has-text-primary">
+          <i class="fas fa-folder-open mr-2"></i> Folder Contents
+        </h1>
+        <p class="subtitle is-6 has-text-grey">Folder ID: <span id="folderId" class="has-text-weight-bold"></span></p>
+
+        <div class="drop-zone" id="dropZone">
+          <i class="fas fa-cloud-upload-alt fa-3x mb-3" style="color: #4a6fa5;"></i>
+          <p class="is-size-5 mb-2">Drag & drop files here</p>
+          <p class="is-size-7 has-text-grey">or</p>
+          <div class="file has-name is-centered my-3">
+            <label class="file-label">
+              <input class="file-input" type="file" id="fileInput" name="file">
+              <span class="file-cta">
+                <span class="file-icon">
+                  <i class="fas fa-upload"></i>
+                </span>
+                <span class="file-label">Choose a file…</span>
+              </span>
+              <span class="file-name" id="fileName">No file selected</span>
+            </label>
+          </div>
+          <button class="button is-primary is-small" id="uploadButton" disabled>
+            <span class="icon">
+              <i class="fas fa-upload"></i>
+            </span>
+            <span>Upload</span>
+          </button>
+
+          <div class="progress-container" id="progressContainer">
+            <progress class="progress is-primary" id="uploadProgress" value="0" max="100"></progress>
+            <p class="has-text-centered is-size-7 has-text-grey" id="progressText">0%</p>
+          </div>
+        </div>
+
+        <div class="is-flex is-justify-content-space-between is-align-items-center mb-4">
+          <h2 class="title is-5">Files</h2>
+          <div class="field has-addons">
+            <div class="control">
+              <input class="input is-small" type="text" id="searchInput" placeholder="Search files...">
+            </div>
+            <div class="control">
+              <button class="button is-primary is-small" id="refreshButton">
+                <span class="icon">
+                  <i class="fas fa-sync-alt"></i>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="loadingSpinner" class="loading-spinner my-5"></div>
+        
+        <div id="folderContents" class="mb-4">
+          <!-- Folder contents will be displayed here -->
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="notification is-success" id="notificationSuccess">
+    <button class="delete" id="closeNotification"></button>
+    <span id="notificationText"></span>
+  </div>
+
+  <footer>
+    <p><strong>FileShare</strong> &copy; 2025 | Made with <i class="fas fa-heart has-text-danger"></i> by Maksim</p>
+  </footer>
+
+  <script>
+    // Check authentication
+    document.addEventListener('DOMContentLoaded', () => {
+      const token = localStorage.getItem('jwtToken');
+      if (!token) {
+        window.location.href = '/index.html';
+        return;
+      }
+
+      // Verify token with server
+      fetch('http://localhost:3000/api/verify-token', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+      .then(response => {
+        if (!response.ok) {
+          localStorage.removeItem('jwtToken');
+          window.location.href = '/index.html';
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('jwtToken');
+        window.location.href = '/index.html';
+      });
+    });
+
+    // DOM Elements
+    const fileInput = document.getElementById('fileInput');
+    const fileName = document.getElementById('fileName');
+    const uploadButton = document.getElementById('uploadButton');
+    const dropZone = document.getElementById('dropZone');
+    const folderContentsDiv = document.getElementById('folderContents');
+    const folderIdSpan = document.getElementById('folderId');
+    const progressContainer = document.getElementById('progressContainer');
+    const uploadProgress = document.getElementById('uploadProgress');
+    const progressText = document.getElementById('progressText');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    const refreshButton = document.getElementById('refreshButton');
+    const searchInput = document.getElementById('searchInput');
+    const notification = document.getElementById('notificationSuccess');
+    const notificationText = document.getElementById('notificationText');
+    const closeNotification = document.getElementById('closeNotification');
+
+    // Extract folderID from query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const folderId = urlParams.get('folderID');
+    if (!folderId) {
+      window.location.href = '/dashboard.html';
+      throw new Error('No folder ID provided');
+    }
+    folderIdSpan.textContent = folderId;
+
+    // Format file size
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Format date
+    function formatDate(dateString) {
+      const date = new Date(dateString);
+      return date.toLocaleString();
+    }
+
+    // Get file icon based on file type
+    function getFileIcon(fileType) {
+      const fileIcons = {
+        '.pdf': 'fa-file-pdf',
+        '.doc': 'fa-file-word',
+        '.docx': 'fa-file-word',
+        '.xls': 'fa-file-excel',
+        '.xlsx': 'fa-file-excel',
+        '.ppt': 'fa-file-powerpoint',
+        '.pptx': 'fa-file-powerpoint',
+        '.jpg': 'fa-file-image',
+        '.jpeg': 'fa-file-image',
+        '.png': 'fa-file-image',
+        '.gif': 'fa-file-image',
+        '.txt': 'fa-file-alt',
+        '.zip': 'fa-file-archive',
+        '.rar': 'fa-file-archive',
+        '.mp3': 'fa-file-audio',
+        '.mp4': 'fa-file-video',
+        '.html': 'fa-file-code',
+        '.css': 'fa-file-code',
+        '.js': 'fa-file-code',
+      };
+      
+      return fileIcons[fileType] || 'fa-file';
+    }
+
+    // Show notification
+    function showNotification(message, type = 'is-success') {
+      notification.className = `notification ${type}`;
+      notificationText.textContent = message;
+      notification.classList.add('show');
+      
+      setTimeout(() => {
+        notification.classList.remove('show');
+      }, 5000);
+    }
+
+    // Close notification on click
+    closeNotification.addEventListener('click', () => {
+      notification.classList.remove('show');
+    });
+
+    // Fetch and display folder contents
+    async function fetchFolderContents() {
+      const token = localStorage.getItem('jwtToken');
+      if (!token) {
+        window.location.href = '/index.html';
+        return;
+      }
+
+      loadingSpinner.style.display = 'block';
+      folderContentsDiv.innerHTML = '';
+      
+      try {
+        const response = await fetch(`http://localhost:3000/api/folder-contents?folderID=${folderId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        const contents = await response.json();
+        
+        loadingSpinner.style.display = 'none';
+        
+        if (response.ok) {
+          if (contents.length === 0) {
+            folderContentsDiv.innerHTML = `
+              <div class="empty-folder">
+                <i class="fas fa-folder-open fa-3x mb-3" style="color: #ddd;"></i>
+                <p>This folder is empty</p>
+                <p class="is-size-7 has-text-grey">Upload files to get started</p>
+              </div>
+            `;
+            return;
+          }
+          
+          const fileItems = contents.map((file, index) => {
+            // Handle file properties safely
+            const fileObj = typeof file === 'object' ? file : {};
+            const filename = fileObj.filename || `Unknown File ${index}`;
+            const fileType = fileObj.type || '';
+            const fileSize = fileObj.size ? formatFileSize(fileObj.size) : 'Unknown size';
+            const modified = fileObj.modified ? formatDate(fileObj.modified) : 'Unknown date';
+            
+            return `
+              <div class="file-item" data-filename="${filename}">
+                <div class="file-icon">
+                  <i class="fas ${getFileIcon(fileType)}"></i>
+                </div>
+                <div class="file-info">
+                  <span class="file-name">${filename}</span>
+                  <div class="file-meta">
+                    <span class="file-size">${fileSize}</span>
+                    <span class="file-date">${modified}</span>
+                  </div>
+                </div>
+                <div class="file-actions">
+                  <button class="button is-small is-info download-button" data-filename="${filename}">
+                    <span class="icon">
+                      <i class="fas fa-download"></i>
+                    </span>
+                  </button>
+                  <button class="button is-small is-danger delete-button" data-filename="${filename}">
+                    <span class="icon">
+                      <i class="fas fa-trash-alt"></i>
+                    </span>
+                  </button>
+                </div>
+              </div>
+            `;
+          }).join('');
+          
+          folderContentsDiv.innerHTML = fileItems;
+          
+          // Add event listeners to buttons
+          document.querySelectorAll('.delete-button').forEach(button => {
+            button.addEventListener('click', function() {
+              const filename = this.getAttribute('data-filename');
+              deleteFile(filename);
+            });
+          });
+          
+          document.querySelectorAll('.download-button').forEach(button => {
+            button.addEventListener('click', function() {
+              const filename = this.getAttribute('data-filename');
+              downloadFile(filename);
+            });
+          });
+          
+        } else {
+          folderContentsDiv.innerHTML = `
+            <div class="notification is-warning">
+              ${contents.message || 'Error loading folder contents'}
+            </div>
+          `;
+        }
+      } catch (error) {
+        loadingSpinner.style.display = 'none';
+        folderContentsDiv.innerHTML = `
+          <div class="notification is-danger">
+            Error fetching folder contents: ${error.message}
+          </div>
+        `;
+        console.error(error);
+      }
+    }
+
+    // Function to download a file
+    async function downloadFile(filename) {
+      const token = localStorage.getItem('jwtToken');
+      if (!token) {
+        window.location.href = '/index.html';
+        return;
+      }
+
+      try {
+        // First, get a download token
+        const tokenResponse = await fetch(`http://localhost:3000/api/generate-download-token?folderID=${folderId}&filename=${encodeURIComponent(filename)}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!tokenResponse.ok) {
+          throw new Error('Failed to generate download token');
+        }
+
+        const { token: downloadToken } = await tokenResponse.json();
+        if (!downloadToken) {
+          throw new Error('Invalid download token received');
+        }
+
+        // Use the token to download the file
+        const downloadResponse = await fetch(`http://localhost:3000/api/download-file?token=${downloadToken}`);
+
+        if (!downloadResponse.ok) {
+          throw new Error(`File download failed: ${downloadResponse.status} ${downloadResponse.statusText}`);
+        }
+
+        const blob = await downloadResponse.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+
+        showNotification(`Successfully downloaded ${filename}`);
+      } catch (error) {
+        console.error('Download error:', error);
+        showNotification(`Failed to download ${filename}: ${error.message}`, 'is-danger');
+      }
+    }
+
+    // Function to upload a file
+    async function uploadFile() {
+      const token = localStorage.getItem('jwtToken');
+      if (!token) {
+        window.location.href = '/index.html';
+        return;
+      }
+
+      const file = fileInput.files[0];
+      
+      if (!file) {
+        showNotification('Please select a file to upload.', 'is-warning');
+        return;
+      }
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      uploadButton.classList.add('is-loading');
+      progressContainer.style.display = 'block';
+      
+      try {
+        const xhr = new XMLHttpRequest();
+        
+        xhr.upload.addEventListener('progress', (event) => {
+          if (event.lengthComputable) {
+            const percentComplete = Math.round((event.loaded / event.total) * 100);
+            uploadProgress.value = percentComplete;
+            progressText.textContent = percentComplete + '%';
+          }
+        });
+        
+        xhr.onload = function() {
+          if (xhr.status === 200) {
+            const result = JSON.parse(xhr.responseText);
+            showNotification(result.message || 'File uploaded successfully');
+            fetchFolderContents();
+          } else {
+            const result = JSON.parse(xhr.responseText);
+            showNotification(result.message || 'Error uploading file', 'is-danger');
+          }
+          
+          // Reset form
+          fileInput.value = '';
+          fileName.textContent = 'No file selected';
+          uploadButton.disabled = true;
+          uploadButton.classList.remove('is-loading');
+          progressContainer.style.display = 'none';
+          uploadProgress.value = 0;
+          progressText.textContent = '0%';
+        };
+        
+        xhr.onerror = function() {
+          showNotification('Network error occurred', 'is-danger');
+          uploadButton.classList.remove('is-loading');
+          progressContainer.style.display = 'none';
+        };
+        
+        xhr.open('POST', `http://localhost:3000/api/upload-file/${folderId}`, true);
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.send(formData);
+        
+      } catch (error) {
+        console.error('Error uploading file:', error);
+        showNotification('Error uploading file', 'is-danger');
+        uploadButton.classList.remove('is-loading');
+        progressContainer.style.display = 'none';
+      }
+    }
+
+    // Function to delete a file
+    async function deleteFile(filename) {
+      const token = localStorage.getItem('jwtToken');
+      if (!token) {
+        window.location.href = '/index.html';
+        return;
+      }
+
+      if (!confirm(`Are you sure you want to delete ${filename}?`)) {
+        return;
+      }
+      
+      try {
+        const response = await fetch(`http://localhost:3000/api/delete-file/${folderId}/${filename}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        const result = await response.json();
+        if (response.ok) {
+          showNotification(result.message || 'File deleted successfully');
+          fetchFolderContents();
+        } else {
+          showNotification(result.message || 'Error deleting file', 'is-danger');
+        }
+      } catch (error) {
+        console.error('Error deleting file:', error);
+        showNotification('Error deleting file', 'is-danger');
+      }
+    }
+
+    // Search files
+    searchInput.addEventListener('input', function() {
+      const searchTerm = this.value.toLowerCase();
+      const fileItems = document.querySelectorAll('.file-item');
+      
+      fileItems.forEach(item => {
+        const fileName = item.querySelector('.file-name').textContent.toLowerCase();
+        if (fileName.includes(searchTerm)) {
+          item.style.display = 'flex';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+    });
+
+    // Event Listeners
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      fileName.textContent = file ? file.name : 'No file selected';
+      uploadButton.disabled = !file;
+    });
+    
+    uploadButton.addEventListener('click', uploadFile);
+    
+    refreshButton.addEventListener('click', fetchFolderContents);
+
+    // Drag and drop functionality
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, unhighlight, false);
+    });
+    
+    function highlight() {
+      dropZone.classList.add('active');
+    }
+    
+    function unhighlight() {
+      dropZone.classList.remove('active');
+    }
+    
+    dropZone.addEventListener('drop', handleDrop, false);
+    
+    function handleDrop(e) {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      
+      if (files.length > 0) {
+        fileInput.files = files;
+        fileName.textContent = files[0].name;
+        uploadButton.disabled = false;
+      }
+    }
+
+    // Initial load
+    fetchFolderContents();
+  </script>
+</body>
+</html>
