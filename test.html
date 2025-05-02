@@ -9,9 +9,124 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
   <style>
-    /* (styles unchanged) */
-    :root { /* ... */ }
-    /* ... rest of CSS ... */
+    :root {
+      --sidebar-width: 240px;
+      --text-primary: #202124;
+      --text-secondary: #5f6368;
+      --border-light: #dadce0;
+      --hover-bg: #f1f3f4;
+    }
+    * { box-sizing: border-box; font-family: 'Google Sans', Roboto, Arial, sans-serif; }
+    body { margin: 0; background: #f5f7fa; color: var(--text-primary); display: flex; min-height: 100vh; }
+    .sidebar {
+      width: var(--sidebar-width);
+      background: #fff; border-right: 1px solid var(--border-light);
+      padding: 8px 0; flex-shrink: 0;
+    }
+    .new-folder {
+      margin: 8px 16px; background: #fff; color: var(--text-primary);
+      border: 1px solid var(--border-light); border-radius: 24px;
+      padding: 12px 24px; font-size: 14px; font-weight: 500;
+      cursor: pointer; display: flex; align-items: center;
+    }
+    .new-folder:hover { background: var(--hover-bg); }
+    .new-folder .icon { margin-right: 12px; font-size: 20px; }
+    .nav-item {
+      display: flex; align-items: center;
+      padding: 8px 16px 8px 24px; font-size: 14px;
+      color: var(--text-primary); cursor: pointer; margin: 2px 0;
+    }
+    .nav-item .icon { width: 24px; margin-right: 18px; text-align: center; color: var(--text-secondary); }
+    .nav-item:hover { background: var(--hover-bg); }
+    .nav-item.active { background: #e8f0fe; color: #1a73e8; }
+    .nav-item.active .icon { color: #1a73e8; }
+    .main-content {
+      flex-grow: 1; padding: 24px; background: #fff;
+    }
+    .folder-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px; margin-top: 24px;
+    }
+    .folder-item {
+      flex-direction: column; align-items: center;
+      padding: 16px; border: 1px solid var(--border-light);
+      border-radius: 8px; cursor: pointer; transition: background 0.2s;
+      display: flex;
+    }
+    .folder-item:hover { background: var(--hover-bg); }
+    .folder-icon { font-size: 48px; color: #fbbc04; margin-bottom: 8px; }
+    .folder-name {
+      font-size: 14px; text-align: center;
+      word-break: break-word; max-width: 100%;
+    }
+    /* Modal */
+    .modal {
+      display: none; position: fixed; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,0.5);
+      justify-content: center; align-items: center;
+    }
+    .modal-content {
+      background: #fff; padding: 24px; border-radius: 8px; width: 400px;
+    }
+    .modal-title { font-size: 20px; margin-bottom: 16px; }
+    .modal-input {
+      width: 100%; padding: 8px 12px;
+      border: 1px solid var(--border-light);
+      border-radius: 4px; margin-bottom: 16px; font-size: 14px;
+    }
+    .modal-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+    .modal-button {
+      padding: 8px 16px; border-radius: 4px; font-size: 14px; cursor: pointer;
+    }
+    .modal-button.cancel {
+      background: transparent; border: 1px solid var(--border-light);
+    }
+    .modal-button.create {
+      background: #1a73e8; color: #fff; border: none;
+    }
+
+    /* ===== Folder View Styles ===== */
+    body.folder-view-active { flex-direction: column; }
+    .section { flex-grow: 1; }
+    .content-box {
+      background: rgba(255,255,255,0.95); padding: 2rem;
+      border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+      margin: 3rem auto; max-width: 900px; transition: all 0.3s ease;
+    }
+    .content-box:hover { box-shadow: 0 12px 28px rgba(0,0,0,0.15); }
+    footer { padding: 1.5rem; background: rgba(255,255,255,0.8); text-align: center; color: #555; font-weight: 500; }
+    .file-item {
+      display: flex; align-items: center;
+      padding: 0.75rem; border-radius: 6px; margin-bottom: 0.5rem;
+      background: #f9f9f9; transition: all 0.2s ease;
+    }
+    .file-item:hover { background: #f0f0f0; transform: translateY(-2px); }
+    .file-icon { margin-right: 1rem; font-size: 1.2rem; width: 24px; text-align: center; color: #4a6fa5; }
+    .file-info { flex-grow: 1; display: flex; justify-content: space-between; align-items: center; }
+    .file-name { font-weight: 500; color: #333; }
+    .file-meta { color: #777; font-size: 0.85rem; }
+    .file-actions { display: flex; gap: 0.5rem; }
+    .empty-folder { text-align: center; padding: 3rem 1rem; color: #888; }
+    .drop-zone {
+      border: 2px dashed #4a6fa5; border-radius: 8px;
+      padding: 2rem; text-align: center; margin-bottom: 2rem;
+      transition: all 0.3s ease; background: rgba(74,111,165,0.05);
+    }
+    .drop-zone.active { background: rgba(74,111,165,0.15); border-color: #3273dc; }
+    .progress-container { display: none; margin-top: 1rem; }
+    .notification { position: fixed; top: 20px; right: 20px; z-index:1000;
+      padding: 1rem; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.15);
+      transform: translateY(-100px); opacity:0; transition: all 0.3s ease;
+    }
+    .notification.show { transform: translateY(0); opacity:1; }
+    .loading-spinner {
+      display: none; margin: 0 auto; width: 40px; height: 40px;
+      border: 4px solid rgba(74,111,165,0.3); border-radius:50%;
+      border-top-color: #3273dc; animation: spin 1s ease-in-out infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 
