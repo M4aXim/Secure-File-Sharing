@@ -146,10 +146,14 @@
                   <span class="icon"><i class="fas fa-user-plus"></i></span>
                   <span>Create Account</span>
                 </button>
+                <a href="law.html" class="button is-danger is-medium px-5">
+                  <span class="icon"><i class="fas fa-gavel"></i></span>
+                  <span>Law Enforcement</span>
+                </a>
               </div>
-            </div>
+              </div>
             <div class="column is-hidden-mobile">
-              <img src="/api/placeholder/500/400" alt="File sharing illustration" />
+              <img src="assets/Picture.png" alt="File sharing illustration" />
             </div>
           </div>
         </div>
@@ -180,7 +184,7 @@
               </span>
             </div>
             <p class="help has-text-right">
-              <a href="#" class="has-text-grey">Forgot password?</a>
+              <button class="button is-text is-small" type="button" onclick="forgotPassword()">Forgot Password?</button>
             </p>
           </div>
 
@@ -304,12 +308,35 @@
   </footer>
 
   <script>
+function forgotPassword() {
+  const email = prompt("Please enter your email address:");
+
+  if (!email) {
+    showNotification('Please enter email', 'is-danger');
+    return;
+  }
+
+  fetch(`http://localhost:3000/change-password/${encodeURIComponent(email)}`, {
+    method: 'POST' 
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.message) {
+      showNotification(data.message, 'is-success');
+    } else {
+      showNotification(data.error || 'Password reset failed', 'is-danger');
+    }
+  })
+  .catch(error => {
+    showNotification('Connection error. Please try again later.', 'is-danger');
+  });
+}
+
     function showForm(formId) {
       document.getElementById('login-form').classList.add('hidden');
       document.getElementById('register-form').classList.add('hidden');
       document.getElementById(formId + '-form').classList.remove('hidden');
       
-      // Smooth scroll to form
       document.getElementById(formId + '-form').scrollIntoView({ behavior: 'smooth' });
     }
     
