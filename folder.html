@@ -172,7 +172,14 @@
         </div>
 
         <div class="is-flex is-justify-content-space-between is-align-items-center mb-4">
-          <h2 class="title is-5">Files</h2>
+          <div class="buttons">
+            <button class="button is-link is-small" id="addFriendButton">
+              <span class="icon">
+                <i class="fas fa-user-plus"></i>
+              </span>
+              <span>Add Friend</span>
+            </button>
+          </div>
           <div class="field has-addons">
             <div class="control">
               <input class="input is-small" type="text" id="searchInput" placeholder="Search files...">
@@ -186,6 +193,7 @@
             </div>
           </div>
         </div>
+        
 
         <div id="loadingSpinner" class="loading-spinner my-5"></div>
         
@@ -637,6 +645,40 @@
         uploadButton.disabled = false;
       }
     }
+
+    // Add friend button handler
+document.getElementById('addFriendButton').addEventListener('click', async () => {
+  const friendEmail = prompt('Enter the email of the user you want to invite:');
+  if (!friendEmail) return;
+
+  const token = localStorage.getItem('jwtToken');
+  try {
+    const response = await fetch('http://localhost:3000/api/add-friend', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ 
+        friendEmail,
+        folderId 
+      })
+    });
+
+    const data = await response.json();
+    
+    if (response.ok) {
+      showNotification(data.message || 'Invitation sent successfully!');
+    } else {
+      showNotification(data.message || 'Failed to send invitation.', 'is-danger');
+    }
+  } catch (err) {
+    console.error(err);
+    showNotification('Error sending invitation.', 'is-danger'); 
+  }
+});
+
+
 
     // Initial load
     fetchFolderContents();

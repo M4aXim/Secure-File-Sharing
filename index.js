@@ -28,6 +28,8 @@ const fastifySensible = require('@fastify/sensible');
 const fastifyJwt      = require('@fastify/jwt');
 const rateLimit       = require('@fastify/rate-limit');
 const fastifyStatic   = require('@fastify/static');
+const os = require('os');
+
 
 // --- CONFIGURATION ---
 const PORT             = process.env.PORT || 3000;
@@ -565,6 +567,108 @@ fastify.get('/api/verify-token', { preHandler: [fastify.authenticate] }, async (
   return { message: 'Token is valid' };
 });
 
+// ADD FRIEND + INVITE
+fastify.post('/api/add-friend', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { friendEmail, folderId } = req.body;
+  if (!friendEmail || !folderId) {
+    return reply.badRequest('Missing email or folder ID');
+  }
+
+  const folders = JSON.parse(await fs.readFile(FOLDERS_FILE, 'utf8'));
+  const folder = folders.find(f => f.folderId === folderId);
+  if (!folder) return reply.notFound('Folder not found');
+  if (folder.owner !== req.user.username) return reply.forbidden('Access denied');
+
+  const users = JSON.parse(await fs.readFile(USERS_FILE, 'utf8'));
+  const friend = Object.values(users).find(u => u.email === friendEmail);
+  if (!friend) return reply.notFound('User not found');
+
+  const invitationId = crypto.randomBytes(16).toString('hex');
+  folder.invitationId = invitationId;
+
+  await fs.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+
+  try {
+    await transporter.sendMail({
+      from: `"File Sharing" <${process.env.EMAIL_USER}>`,
+      to: friendEmail,
+      subject: `Folder Invitation from ${req.user.username}`,
+      text: `Hello,
+
+You have been invited by ${req.user.username} to join the folder "${folder.folderName}" and edit it.
+
+Accept invitation: http://localhost:3000/api/accept-invitation/${invitationId}
+Deny invitation: http://localhost:3000/api/deny-invitation/${invitationId}
+`
+    });
+
+    await logActivity(req, 'send-invitation', {
+      invitationId,
+      folderId,
+      fromUser: req.user.username,
+      toEmail: friendEmail
+    });
+
+    return reply.send({ message: 'Invitation sent successfully' });
+
+  } catch (err) {
+    fastify.log.error(err);
+    return reply.internalServerError('Failed to send invitation');
+  }
+});
+
+// ACCEPT INVITATION
+// ACCEPT INVITATION WITHOUT AUTH
+fastify.get('/api/accept-invitation/:invitationId', async (req, reply) => {
+  const { invitationId } = req.params;
+  if (!invitationId) return reply.badRequest('Missing invitation ID');
+
+  const folders = JSON.parse(await fs.readFile(FOLDERS_FILE, 'utf8'));
+  const folder = folders.find(f => f.invitationId === invitationId);
+  if (!folder) return reply.notFound('Invitation not found');
+
+  if (!folder.friends) folder.friends = [];
+
+  // Add a placeholder for anonymous approval
+  if (!folder.friends.includes('invited-user')) {
+    folder.friends.push('invited-user');
+  }
+
+  folder.invitationId = null;
+  await fs.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+
+  await logActivity(req, 'accept-invitation', {
+    invitationId,
+    folderId: folder.folderId,
+    fromUser: 'anonymous'
+  });
+
+  return reply.send({ message: 'Invitation accepted successfully (anonymous)' });
+});
+
+// DENY INVITATION WITHOUT AUTH
+fastify.get('/api/deny-invitation/:invitationId', async (req, reply) => {
+  const { invitationId } = req.params;
+  if (!invitationId) return reply.badRequest('Missing invitation ID');
+
+  const folders = JSON.parse(await fs.readFile(FOLDERS_FILE, 'utf8'));
+  const folder = folders.find(f => f.invitationId === invitationId);
+  if (!folder) return reply.notFound('Invitation not found');
+
+  folder.invitationId = null;
+  await fs.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+
+  await logActivity(req, 'deny-invitation', {
+    invitationId,
+    folderId: folder.folderId,
+    fromUser: 'anonymous'
+  });
+
+  return reply.send({ message: 'Invitation denied successfully (anonymous)' });
+});
+
+
+
 // SPA fallback for non-API routes
 fastify.setNotFoundHandler((req, reply) => {
   if (req.raw.url.startsWith('/api/')) {
@@ -573,16 +677,30 @@ fastify.setNotFoundHandler((req, reply) => {
   return reply.sendFile('index.html');
 });
 
+
+
 // --- STARTUP ---
+
 const start = async () => {
   await ensureDataFiles();
   try {
     await fastify.listen({ port: PORT, host: '0.0.0.0' });
-    fastify.log.info(`Server listening on port ${PORT}`);
+
+    const ifaces = os.networkInterfaces();
+    console.log(`Server is running on the following addresses:`);
+
+    Object.entries(ifaces).forEach(([iface, addresses]) => {
+      addresses.forEach(addr => {
+        if (addr.family === 'IPv4') {
+          console.log(`→ http://${addr.address}:${PORT}`);
+        }
+      });
+    });
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);
   }
 };
+
 
 start();
