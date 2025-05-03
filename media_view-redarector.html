@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Media Redirector</title>
+  <style>
+    body { display:flex;align-items:center;justify-content:center;
+           height:100vh;margin:0;font-family:sans-serif;
+           background:#f5f5f5;color:#333; }
+    .msg { text-align:center; }
+  </style>
+</head>
+<body>
+  <div class="msg">Preparing your media…</div>
+  <script>
+    const p = new URLSearchParams(window.location.search);
+    const folderID = p.get('folderID');
+    const filename = p.get('filename');
+    if (!folderID || !filename) {
+      document.body.innerHTML = '<p class="msg">Missing folderID or filename.</p>';
+      throw 'Missing params';
+    }
+    const ext = filename.split('.').pop().toLowerCase();
+    if (ext === 'mp4') {
+      window.location.replace(
+        `mp4.html?folderID=${encodeURIComponent(folderID)}&filename=${encodeURIComponent(filename)}`
+      );
+    } else if (ext === 'mp3') {
+      window.location.replace(
+        `mp3.html?folderID=${encodeURIComponent(folderID)}&filename=${encodeURIComponent(filename)}`
+      );
+    } else {
+      document.body.innerHTML = `
+      <div class="msg">
+        Unsupported type: <strong>.${ext}</strong><br>
+        Please use MP4 or MP3.
+      </div>`;
+      setTimeout(() => {
+      window.history.back();
+      }, 2000);
+    }
+  </script>
+</body>
+</html>

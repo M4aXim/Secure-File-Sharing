@@ -76,6 +76,12 @@
       background: #e8f0fe;
       color: #1a73e8;
     }
+    
+    /* New style for shared with me when active */
+    .nav-item.shared-active {
+      background: #e8f0fe;
+      color: #4285f4;
+    }
 
     .nav-item .icon {
       width: 24px;
@@ -86,6 +92,11 @@
 
     .nav-item.active .icon {
       color: #1a73e8;
+    }
+    
+    /* Icon color for shared when active */
+    .nav-item.shared-active .icon {
+      color: #4285f4;
     }
 
     /* MAIN CONTENT */
@@ -121,6 +132,11 @@
       font-size: 48px;
       color: #fbbc04;
       margin-bottom: 8px;
+    }
+    
+    /* Blue folder color for shared folders */
+    .folder-icon.shared {
+      color: #4285f4;
     }
 
     .folder-name {
@@ -197,15 +213,15 @@
       <span>Make a folder</span>
     </button>
     
-    <div class="nav-item">
+    <div class="nav-item" id="homeNav">
       <span class="icon"><i class="fas fa-home"></i></span>
       <span>Home</span>
     </div>
-    <div class="nav-item active" onclick="showMyDrive()">
+    <div class="nav-item active" id="myDriveNav" onclick="activateMyDrive()">
       <span class="icon"><i class="fas fa-hdd"></i></span>
       <span>My Drive</span>
     </div>
-    <div class="nav-item">
+    <div class="nav-item" id="sharedNav" onclick="activateShared()">
       <span class="icon"><i class="fas fa-user-friends"></i></span>
       <span>Shared with me</span>
     </div>
@@ -238,7 +254,7 @@
         window.location.href = '/index.html';
         return;
       }
-
+  
       // Verify token with server
       fetch('http://localhost:3000/api/verify-token', {
         headers: {
@@ -255,31 +271,89 @@
         localStorage.removeItem('jwtToken');
         window.location.href = '/index.html';
       });
+      
+      // Initialize the display
+      showMyDrive();
     });
-
-    // Show create folder modal
-    function showCreateFolderModal() {
-      document.getElementById('createFolderModal').style.display = 'flex';
-      document.getElementById('folderNameInput').focus();
+    
+    // Activate My Drive section
+    function activateMyDrive() {
+      // Update navigation styling
+      document.getElementById('myDriveNav').classList.add('active');
+      document.getElementById('myDriveNav').classList.remove('shared-active');
+      document.getElementById('sharedNav').classList.remove('shared-active');
+      document.getElementById('sharedNav').classList.remove('active');
+      document.getElementById('homeNav').classList.remove('active');
+      document.getElementById('homeNav').classList.remove('shared-active');
+      
+      // Show My Drive content
+      showMyDrive();
     }
-
-    // Hide create folder modal
-    function hideCreateFolderModal() {
-      document.getElementById('createFolderModal').style.display = 'none';
-      document.getElementById('folderNameInput').value = '';
+    
+    // Activate Shared with me section
+    function activateShared() {
+      // Update navigation styling
+      document.getElementById('sharedNav').classList.add('shared-active');
+      document.getElementById('myDriveNav').classList.remove('active');
+      document.getElementById('myDriveNav').classList.remove('shared-active');
+      document.getElementById('homeNav').classList.remove('active');
+      document.getElementById('homeNav').classList.remove('shared-active');
+      
+      // Show Shared with me content
+      showSharedWithMe();
     }
-
-    // Create new folder
-    async function createFolder() {
-      const folderName = document.getElementById('folderNameInput').value.trim();
-      if (!folderName) return;
-
+  
+    // Show Shared with me content
+    async function showSharedWithMe() {
       const token = localStorage.getItem('jwtToken');
       if (!token) {
         window.location.href = '/index.html';
         return;
       }
-
+  
+      try {
+        const response = await fetch('http://localhost:3000/api/shared-folders', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        const folders = await response.json();
+  
+        const folderGrid = document.getElementById('folderGrid');
+        folderGrid.innerHTML = folders.map(folder => `
+          <div class="folder-item" onclick="openFolder('${folder.folderId}')">
+            <div class="folder-icon shared"><i class="fas fa-folder-open"></i></div>
+            <div class="folder-name">${folder.folderName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+          </div>
+        `).join('');
+      } catch (error) {
+        console.error('Error loading shared folders:', error);
+      }
+    }
+  
+    // Show create folder modal
+    function showCreateFolderModal() {
+      document.getElementById('createFolderModal').style.display = 'flex';
+      document.getElementById('folderNameInput').focus();
+    }
+  
+    // Hide create folder modal
+    function hideCreateFolderModal() {
+      document.getElementById('createFolderModal').style.display = 'none';
+      document.getElementById('folderNameInput').value = '';
+    }
+  
+    // Create new folder
+    async function createFolder() {
+      const folderName = document.getElementById('folderNameInput').value.trim();
+      if (!folderName) return;
+  
+      const token = localStorage.getItem('jwtToken');
+      if (!token) {
+        window.location.href = '/index.html';
+        return;
+      }
+  
       try {
         const response = await fetch('http://localhost:3000/api/create-folder', {
           method: 'POST',
@@ -289,7 +363,7 @@
           },
           body: JSON.stringify({ folderName })
         });
-
+  
         const data = await response.json();
         if (response.ok) {
           hideCreateFolderModal();
@@ -302,7 +376,7 @@
         console.error(error);
       }
     }
-
+  
     // Show My Drive content
     async function showMyDrive() {
       const token = localStorage.getItem('jwtToken');
@@ -310,15 +384,16 @@
         window.location.href = '/index.html';
         return;
       }
-
+  
       try {
-        const response = await fetch('http://localhost:3000/api/folders', {
+        const response = await fetch('http://localhost:3000/api/my-folders', {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         });
+  
         const folders = await response.json();
-        
+  
         const folderGrid = document.getElementById('folderGrid');
         folderGrid.innerHTML = folders.map(folder => `
           <div class="folder-item" onclick="openFolder('${folder.folderId}')">
@@ -330,14 +405,11 @@
         console.error('Error loading folders:', error);
       }
     }
-
+  
     // Open folder
     function openFolder(folderId) {
       window.location.href = `folder.html?folderID=${folderId}`;
     }
-
-    // Initialize
-    document.addEventListener('DOMContentLoaded', showMyDrive);
-  </script>
+  </script>  
 </body>
 </html>

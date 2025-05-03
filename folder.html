@@ -413,50 +413,35 @@
       }
     }
 
-    // View
-    async function viewFile(filename) {
-      const token = localStorage.getItem('jwtToken');
-      if (!token) return window.location.href = '/index.html';
+    // View (redirect to media_view-redarector.html with filename in query)
+    function viewFile(filename) {
+  window.location.href = 
+    `media_view-redarector.html?folderID=${encodeURIComponent(folderId)}&filename=${encodeURIComponent(filename)}`;
+}
 
-      try {
-        const res = await fetch(
-          `http://localhost:3000/api/view-file/${folderId}/${encodeURIComponent(filename)}`,
-          { headers: { 'Authorization': `Bearer ${token}` } }
-        );
-        if (!res.ok) throw new Error(res.statusText);
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
-        setTimeout(() => URL.revokeObjectURL(url), 30000);
-      } catch (err) {
-        console.error(err);
-        showNotification(`Cannot open ${filename}: ${err.message}`, 'is-danger');
-      }
-    }
 
     // Delete
     async function deleteFile(filename) {
-  const token = localStorage.getItem('jwtToken');
-  if (!token) return window.location.href = '/index.html';
-  if (!confirm(`Delete ${filename}?`)) return;
+      const token = localStorage.getItem('jwtToken');
+      if (!token) return window.location.href = '/index.html';
+      if (!confirm(`Delete ${filename}?`)) return;
 
-  try {
-    // ← await & capture the response
-    const res = await fetch(`/api/delete-file/${folderId}/${encodeURIComponent(filename)}`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
+      try {
+        const res = await fetch(`/api/delete-file/${folderId}/${encodeURIComponent(filename)}`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.message || res.statusText);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || res.statusText);
 
-    showNotification(data.message || 'Deleted');
-    fetchFolderContents();
-  } catch (err) {
-    console.error(err);
-    showNotification(`Delete failed: ${err.message}`, 'is-danger');
-  }
-}
+        showNotification(data.message || 'Deleted');
+        fetchFolderContents();
+      } catch (err) {
+        console.error(err);
+        showNotification(`Delete failed: ${err.message}`, 'is-danger');
+      }
+    }
 
     // Upload
     async function uploadFile() {
@@ -504,7 +489,7 @@
       xhr.send(form);
     }
 
-    // Search & drag/drop & other UI
+    // UI handlers
     fileInput.addEventListener('change', () => {
       const f = fileInput.files[0];
       fileNameDisplay.textContent = f ? f.name : 'No file selected';
@@ -512,6 +497,7 @@
     });
     uploadButton.addEventListener('click', uploadFile);
     refreshButton.addEventListener('click', fetchFolderContents);
+
     ['dragenter','dragover','dragleave','drop'].forEach(ev =>
       dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); }, false)
     );
