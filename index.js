@@ -796,6 +796,25 @@ fastify.post('/api/staff/flag-folder/:folderId', { preHandler: [fastify.authenti
 
   folder.flagged = true;
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+  
+  try {
+    await transporter.sendMail({
+      from: `"File Sharing" <${process.env.EMAIL_USER}>`,
+      to: process.env.EMAIL_USER,
+      subject: 'Folder Flagged for Policy Violation',
+      text: `Folder has been flagged:
+      
+Reported by staff member: ${req.user.username}
+Folder ID: ${folderId}
+Folder Name: ${folder.folderName}
+Folder Owner: ${folder.owner}
+
+This folder has been marked for review due to potential policy violations.`
+    });
+  } catch (err) {
+    fastify.log.error('Failed to send flag notification email:', err);
+  }
+
   await logActivity(req, 'staff-flag-folder', { folderId });
   return reply.send({ message: 'Folder flagged' });
 });
@@ -877,8 +896,11 @@ fastify.get('/api/staff/audit-log', { preHandler: [fastify.authenticate, fastify
 
 fastify.get('/api/staff/get-for-all-folders-ID', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const folderIds = folders.map(f => f.folderId);
-  return { folderIds };
+  const folderInfo = folders.map(f => ({
+    folderId: f.folderId,
+    owner: f.owner
+  }));
+  return { folders: folderInfo };
 });
 
 

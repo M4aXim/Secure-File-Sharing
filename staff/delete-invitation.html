@@ -1,45 +1,107 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Staff – Kick Friend</title>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 2rem; background: #f9f9f9; }
-    h1 { margin-bottom: 1rem; }
-    form { margin-bottom: 1rem; }
-    input, button { padding: .5rem; margin-right: .5rem; }
-    #result { margin-top: 1rem; }
-  </style>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <title>Staff – Kick Friend</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            padding: 2rem;
+            background: #f0f2f5;
+            max-width: 600px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #1a73e8;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        form {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        label {
+            display: block;
+            margin-bottom: 1rem;
+            color: #444;
+        }
+        input {
+            width: 100%;
+            padding: 0.75rem;
+            margin-top: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 0.75rem;
+            background: #1a73e8;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin-top: 1rem;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #1557b0;
+        }
+        #result {
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: 4px;
+            text-align: center;
+            color: #d32f2f;
+        }
+        #result.success {
+            color: #2e7d32;
+            background: #e8f5e9;
+        }
+    </style>
 </head>
 <body>
-  <h1>Kick a Friend from Folder</h1>
-  <form id="form">
-    <label>Folder ID: <input type="text" id="folderId" required /></label>
-    <label>Friend Username: <input type="text" id="friendUsername" required /></label>
-    <button type="submit">Kick</button>
-  </form>
-  <div id="result"></div>
-  <script>
-    (async function(){
-      const token = localStorage.getItem('token') || prompt('Enter JWT token');
-      document.getElementById('form').onsubmit = async e => {
-        e.preventDefault();
-        const folderId = document.getElementById('folderId').value.trim();
-        const friendUsername = document.getElementById('friendUsername').value.trim();
-        try {
-          const res = await fetch(`/api/staff/folders/${folderId}/friends/${friendUsername}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': 'Bearer ' + token }
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || data.message || res.statusText);
-          document.getElementById('result').textContent = data.message;
-        } catch (err) {
-          document.getElementById('result').textContent = 'Error: ' + err.message;
-        }
-      };
-    })();
-  </script>
+    <h1>Kick a Friend from Folder</h1>
+    <form id="form">
+        <label>
+            Folder ID
+            <input type="text" id="folderId" required placeholder="Enter folder ID" />
+        </label>
+        <label>
+            Friend Username
+            <input type="text" id="friendUsername" required placeholder="Enter username" />
+        </label>
+        <button type="submit">Kick Friend</button>
+    </form>
+    <div id="result"></div>
+    <script>
+        (async function(){
+            const token = localStorage.getItem('token') || prompt('Enter JWT token');
+            document.getElementById('form').onsubmit = async e => {
+                e.preventDefault();
+                const folderId = document.getElementById('folderId').value.trim();
+                const friendUsername = document.getElementById('friendUsername').value.trim();
+                const resultDiv = document.getElementById('result');
+                try {
+                    const res = await fetch(`/api/staff/folders/${folderId}/friends/${friendUsername}`, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || data.message || res.statusText);
+                    resultDiv.textContent = data.message;
+                    resultDiv.className = 'success';
+                } catch (err) {
+                    resultDiv.textContent = 'Error: ' + err.message;
+                    resultDiv.className = '';
+                }
+            };
+        })();
+    </script>
 </body>
 </html>
