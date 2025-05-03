@@ -29,6 +29,8 @@ const fastifyJwt      = require('@fastify/jwt');
 const rateLimit       = require('@fastify/rate-limit');
 const fastifyStatic   = require('@fastify/static');
 const os = require('os');
+const mime = require('mime-types');
+
 
 
 // --- CONFIGURATION ---
@@ -55,7 +57,6 @@ const AUDIT_LOG     = path.join(__dirname, 'audit.log');
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 // include mp4 in allowed extensions
-const ALLOWED_EXTS  = ['.txt', '.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.gif', '.mp4'];
 
 // --- PLUGINS ---
 fastify.register(fastifyCors, { origin: '*', methods: ['GET','POST','PUT','DELETE'] });
@@ -301,9 +302,7 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
   if (meta.owner !== req.user.username) return reply.forbidden('Access denied');
 
   const ext = path.extname(upload.filename).toLowerCase();
-  if (!ALLOWED_EXTS.includes(ext)) {
-    return reply.badRequest('File type not allowed');
-  }
+
 
   const filename = `${Date.now()}-${upload.filename}`;
   const filePath = path.join(FOLDERS_DIR, folderId, filename);
@@ -371,28 +370,23 @@ fastify.get('/api/download-file', async (req, reply) => {
   return reply.send(createReadStream(filePath));
 });
 
-// DELETE /api/delete-file/:folderId/:filename
-fastify.delete('/api/delete-file/:folderId/:filename', { preHandler: [fastify.authenticate] }, async (req, reply) => {
-  const { folderId, filename } = req.params;
-  if (!folderId || !filename) return reply.badRequest('Missing folderId or filename');
-
-  const folders = JSON.parse(await fs.readFile(FOLDERS_FILE, 'utf8'));
-  const meta    = folders.find(f => f.folderId === folderId);
-  if (!meta) return reply.notFound('Folder not found');
-  if (meta.owner !== req.user.username) return reply.forbidden('Access denied');
+fastify.delete('/api/delete-file/:folderId/*', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { folderId } = req.params;
+  const filename = req.params['*']; // ← this captures the entire filename
 
   const filePath = path.join(FOLDERS_DIR, folderId, filename);
+
   try {
     await fs.access(filePath);
     await fs.unlink(filePath);
-  } catch {
+    await logActivity(req, 'delete-file', { folderId, filename });
+    return reply.send({ message: 'File deleted' });
+  } catch (err) {
+    req.log.error(`Delete error: ${err.message}`);
     return reply.notFound('File not found');
   }
-
-  await logActivity(req, 'delete-file', { folderId, filename });
-
-  return { message: 'File deleted' };
 });
+
 
 // GET /api/open-file
 fastify.get('/api/open-file', { preHandler: [fastify.authenticate] }, async (req, reply) => {
@@ -618,7 +612,6 @@ Deny invitation: http://localhost:3000/api/deny-invitation/${invitationId}
 });
 
 // ACCEPT INVITATION
-// ACCEPT INVITATION WITHOUT AUTH
 fastify.get('/api/accept-invitation/:invitationId', async (req, reply) => {
   const { invitationId } = req.params;
   if (!invitationId) return reply.badRequest('Missing invitation ID');
@@ -627,24 +620,35 @@ fastify.get('/api/accept-invitation/:invitationId', async (req, reply) => {
   const folder = folders.find(f => f.invitationId === invitationId);
   if (!folder) return reply.notFound('Invitation not found');
 
+  // Get invited user's username from stored metadata
+  const invitedUsername = folder.invitedUsername;
+  if (!invitedUsername) return reply.badRequest('Invalid invitation data');
+
+  // Ensure the 'friends' array exists
   if (!folder.friends) folder.friends = [];
 
-  // Add a placeholder for anonymous approval
-  if (!folder.friends.includes('invited-user')) {
-    folder.friends.push('invited-user');
+  // Add the invited username to the friends list if not already there
+  if (!folder.friends.includes(invitedUsername)) {
+    folder.friends.push(invitedUsername);
   }
 
+  // Clean up the invitation metadata
   folder.invitationId = null;
+  folder.invitedUsername = null;
+
+  // Save changes to file
   await fs.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
 
+  // Log the acceptance
   await logActivity(req, 'accept-invitation', {
     invitationId,
     folderId: folder.folderId,
-    fromUser: 'anonymous'
+    fromUser: invitedUsername
   });
 
-  return reply.send({ message: 'Invitation accepted successfully (anonymous)' });
+  return reply.send({ message: `Invitation accepted successfully by ${invitedUsername}` });
 });
+
 
 // DENY INVITATION WITHOUT AUTH
 fastify.get('/api/deny-invitation/:invitationId', async (req, reply) => {
@@ -667,6 +671,25 @@ fastify.get('/api/deny-invitation/:invitationId', async (req, reply) => {
   return reply.send({ message: 'Invitation denied successfully (anonymous)' });
 });
 
+fastify.get('/api/view-file/:folderId/*', async (req, reply) => {
+  const { folderId } = req.params;
+  const filename = req.params['*']; // ← full, wildcard-captured filename
+
+  const filePath = path.join(FOLDERS_DIR, folderId, filename);
+
+  try {
+    await fs.access(filePath);
+
+    const contentType = mime.lookup(filename) || 'application/octet-stream';
+    reply.header('Content-Type', contentType);
+    reply.header('Content-Disposition', 'inline');
+
+    return reply.send(createReadStream(filePath));
+  } catch (err) {
+    req.log.error(`Failed to open file: ${filePath}`, err);
+    return reply.notFound('File not found or access denied');
+  }
+});
 
 
 // SPA fallback for non-API routes
