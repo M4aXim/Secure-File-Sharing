@@ -32,6 +32,8 @@
       padding: 8px 0;
       background: #fff;
       border-right: 1px solid var(--border-light);
+      display: flex;
+      flex-direction: column;
     }
 
     .new-folder {
@@ -99,6 +101,35 @@
       color: #4285f4;
     }
 
+    /* User actions section */
+    .user-actions {
+      margin-top: auto;
+      border-top: 1px solid var(--border-light);
+      padding-top: 16px;
+      margin-bottom: 16px;
+    }
+
+    .user-action-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 16px 8px 24px;
+      color: var(--text-primary);
+      font-size: 14px;
+      cursor: pointer;
+      margin: 2px 0;
+    }
+
+    .user-action-item:hover {
+      background: var(--hover-bg);
+    }
+
+    .user-action-item .icon {
+      width: 24px;
+      margin-right: 18px;
+      text-align: center;
+      color: var(--text-secondary);
+    }
+
     /* MAIN CONTENT */
     .main-content {
       flex-grow: 1;
@@ -157,6 +188,7 @@
       background: rgba(0, 0, 0, 0.5);
       justify-content: center;
       align-items: center;
+      z-index: 1000;
     }
 
     .modal-content {
@@ -180,6 +212,17 @@
       font-size: 14px;
     }
 
+    .modal-input-group {
+      margin-bottom: 16px;
+    }
+
+    .modal-input-group label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
     .modal-buttons {
       display: flex;
       justify-content: flex-end;
@@ -198,10 +241,18 @@
       border: 1px solid var(--border-light);
     }
 
-    .modal-button.create {
+    .modal-button.create,
+    .modal-button.submit {
       background: #1a73e8;
       color: white;
       border: none;
+    }
+
+    .error-message {
+      color: #d93025;
+      font-size: 12px;
+      margin-top: 4px;
+      display: none;
     }
   </style>
 </head>
@@ -219,11 +270,19 @@
     </div>
     <div class="nav-item active" id="myDriveNav" onclick="activateMyDrive()">
       <span class="icon"><i class="fas fa-hdd"></i></span>
-      <span>My Drive</span>
+      <span>My Folders</span>
     </div>
     <div class="nav-item" id="sharedNav" onclick="activateShared()">
       <span class="icon"><i class="fas fa-user-friends"></i></span>
       <span>Shared with me</span>
+    </div>
+    
+    <!-- User actions section -->
+    <div class="user-actions">
+      <div class="user-action-item" onclick="showChangePasswordModal()">
+        <span class="icon"><i class="fas fa-key"></i></span>
+        <span>Change Password</span>
+      </div>
     </div>
   </aside>
 
@@ -242,6 +301,37 @@
       <div class="modal-buttons">
         <button class="modal-button cancel" onclick="hideCreateFolderModal()">Cancel</button>
         <button class="modal-button create" onclick="createFolder()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHANGE PASSWORD MODAL -->
+  <div class="modal" id="changePasswordModal">
+    <div class="modal-content">
+      <div class="modal-title">Change Password</div>
+      
+      <div class="modal-input-group">
+        <label for="oldPasswordInput">Current Password</label>
+        <input type="password" class="modal-input" id="oldPasswordInput" placeholder="Enter current password">
+      </div>
+      
+      <div class="modal-input-group">
+        <label for="newPasswordInput">New Password</label>
+        <input type="password" class="modal-input" id="newPasswordInput" placeholder="Enter new password">
+        <div class="error-message" id="newPasswordError"></div>
+      </div>
+      
+      <div class="modal-input-group">
+        <label for="confirmPasswordInput">Confirm New Password</label>
+        <input type="password" class="modal-input" id="confirmPasswordInput" placeholder="Confirm new password">
+        <div class="error-message" id="confirmPasswordError"></div>
+      </div>
+      
+      <div class="error-message" id="generalPasswordError"></div>
+      
+      <div class="modal-buttons">
+        <button class="modal-button cancel" onclick="hideChangePasswordModal()">Cancel</button>
+        <button class="modal-button submit" onclick="changePassword()">Change Password</button>
       </div>
     </div>
   </div>
@@ -409,6 +499,91 @@
     // Open folder
     function openFolder(folderId) {
       window.location.href = `folder.html?folderID=${folderId}`;
+    }
+    
+    // Show change password modal
+    function showChangePasswordModal() {
+      // Clear previous inputs and errors
+      document.getElementById('oldPasswordInput').value = '';
+      document.getElementById('newPasswordInput').value = '';
+      document.getElementById('confirmPasswordInput').value = '';
+      document.getElementById('newPasswordError').style.display = 'none';
+      document.getElementById('confirmPasswordError').style.display = 'none';
+      document.getElementById('generalPasswordError').style.display = 'none';
+      
+      document.getElementById('changePasswordModal').style.display = 'flex';
+      document.getElementById('oldPasswordInput').focus();
+    }
+    
+    // Hide change password modal
+    function hideChangePasswordModal() {
+      document.getElementById('changePasswordModal').style.display = 'none';
+    }
+    
+    // Change password
+    async function changePassword() {
+      // Reset error messages
+      document.getElementById('newPasswordError').style.display = 'none';
+      document.getElementById('confirmPasswordError').style.display = 'none';
+      document.getElementById('generalPasswordError').style.display = 'none';
+      
+      const oldPassword = document.getElementById('oldPasswordInput').value;
+      const newPassword = document.getElementById('newPasswordInput').value;
+      const confirmPassword = document.getElementById('confirmPasswordInput').value;
+      
+      // Validate inputs
+      let hasError = false;
+      
+      if (!oldPassword) {
+        document.getElementById('generalPasswordError').textContent = 'Please enter your current password';
+        document.getElementById('generalPasswordError').style.display = 'block';
+        hasError = true;
+      }
+      
+      if (newPassword.length < 8) {
+        document.getElementById('newPasswordError').textContent = 'Password must be at least 8 characters';
+        document.getElementById('newPasswordError').style.display = 'block';
+        hasError = true;
+      }
+      
+      if (newPassword !== confirmPassword) {
+        document.getElementById('confirmPasswordError').textContent = 'Passwords do not match';
+        document.getElementById('confirmPasswordError').style.display = 'block';
+        hasError = true;
+      }
+      
+      if (hasError) return;
+      
+      const token = localStorage.getItem('jwtToken');
+      if (!token) {
+        window.location.href = '/index.html';
+        return;
+      }
+      
+      try {
+        const response = await fetch('http://localhost:3000/api/change-your-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ oldPassword, newPassword })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+          hideChangePasswordModal();
+          alert('Password changed successfully');
+        } else {
+          document.getElementById('generalPasswordError').textContent = data.message || 'Error changing password';
+          document.getElementById('generalPasswordError').style.display = 'block';
+        }
+      } catch (error) {
+        document.getElementById('generalPasswordError').textContent = 'Error connecting to server';
+        document.getElementById('generalPasswordError').style.display = 'block';
+        console.error(error);
+      }
     }
   </script>  
 </body>

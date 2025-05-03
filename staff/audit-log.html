@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Staff – Audit Log</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 2rem; background: #f9f9f9; }
+    h1 { margin-bottom: 1rem; }
+    form { margin-bottom: 1rem; }
+    input, button { padding: .5rem; }
+    pre { background: #fff; padding: 1rem; border: 1px solid #ddd; max-height: 60vh; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>Audit Log Viewer</h1>
+  <form id="form">
+    <label>Limit (max 1000): <input type="number" id="limit" value="100" min="1" max="1000"/></label>
+    <button type="submit">Fetch</button>
+  </form>
+  <pre id="output"></pre>
+  <script>
+    (async function(){
+      const token = localStorage.getItem('token') || prompt('Enter JWT token');
+      document.getElementById('form').onsubmit = async e => {
+        e.preventDefault();
+        const limit = document.getElementById('limit').value;
+        try {
+          const res = await fetch(`/api/staff/audit-log?limit=${limit}`, {
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+        } catch (err) {
+          document.getElementById('output').textContent = 'Error: ' + err.message;
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

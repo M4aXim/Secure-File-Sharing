@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Staff – Kick Friend</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 2rem; background: #f9f9f9; }
+    h1 { margin-bottom: 1rem; }
+    form { margin-bottom: 1rem; }
+    input, button { padding: .5rem; margin-right: .5rem; }
+    #result { margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Kick a Friend from Folder</h1>
+  <form id="form">
+    <label>Folder ID: <input type="text" id="folderId" required /></label>
+    <label>Friend Username: <input type="text" id="friendUsername" required /></label>
+    <button type="submit">Kick</button>
+  </form>
+  <div id="result"></div>
+  <script>
+    (async function(){
+      const token = localStorage.getItem('token') || prompt('Enter JWT token');
+      document.getElementById('form').onsubmit = async e => {
+        e.preventDefault();
+        const folderId = document.getElementById('folderId').value.trim();
+        const friendUsername = document.getElementById('friendUsername').value.trim();
+        try {
+          const res = await fetch(`/api/staff/folders/${folderId}/friends/${friendUsername}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || data.message || res.statusText);
+          document.getElementById('result').textContent = data.message;
+        } catch (err) {
+          document.getElementById('result').textContent = 'Error: ' + err.message;
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

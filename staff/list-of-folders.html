@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staff Folders List</title>
+</head>
+<body>
+    <h1>List of Folder IDs</h1>
+    <div id="folderList"></div>
+
+    <script>
+        async function getFolderIds() {
+            try {
+                const token = localStorage.getItem('jwtToken'); // Get token from storage
+                const response = await fetch('/api/staff/get-for-all-folders-ID', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Authentication failed');
+                }
+
+                const data = await response.json();
+                const folderList = document.getElementById('folderList');
+                folderList.innerHTML = `<ul>${data.folderIds.map(id => 
+                    `<li>Folder ID: ${id}</li>`).join('')}</ul>`;
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('folderList').innerHTML = 
+                    'Error loading folder IDs. Please ensure you are logged in.';
+            }
+        }
+
+        // Call the function when page loads
+        document.addEventListener('DOMContentLoaded', getFolderIds);
+    </script>
+</body>
+</html>

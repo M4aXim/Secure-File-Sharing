@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Staff – Scan Folder Contents</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 2rem; background: #f9f9f9; }
+    h1 { margin-bottom: 1rem; }
+    form { margin-bottom: 1rem; }
+    input, button { padding: .5rem; }
+    pre { background: #fff; padding: 1rem; border: 1px solid #ddd; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Scan Folder Contents</h1>
+  <form id="form">
+    <label>Folder ID: <input type="text" id="folderId" required /></label>
+    <button type="submit">Scan</button>
+  </form>
+  <pre id="output"></pre>
+  <script>
+    (async function(){
+      const token = localStorage.getItem('token') || prompt('Enter JWT token');
+      document.getElementById('form').onsubmit = async e => {
+        e.preventDefault();
+        const folderId = document.getElementById('folderId').value.trim();
+        try {
+          const res = await fetch(`/api/staff/folder-contents?folderId=${folderId}`, {
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+        } catch (err) {
+          document.getElementById('output').textContent = 'Error: ' + err.message;
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

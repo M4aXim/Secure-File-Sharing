@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Staff – Pending Invitations</title>
+  <!-- Bulma CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.4/css/bulma.min.css">
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
+  <style>
+    .invitation-item {
+      transition: all 0.2s ease;
+    }
+    .invitation-item:hover {
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .page-container {
+      max-width: 900px;
+    }
+  </style>
+</head>
+<body>
+  <section class="section">
+    <div class="container page-container">
+      <div class="columns">
+        <div class="column">
+          <h1 class="title is-3">
+            <span class="icon-text">
+              <span class="icon">
+                <i class="fas fa-envelope"></i>
+              </span>
+              <span>Pending Invitations</span>
+            </span>
+          </h1>
+          <p class="subtitle is-6 mb-4">Staff administration panel</p>
+        </div>
+      </div>
+
+      <div class="columns mb-4">
+        <div class="column">
+          <button id="loadBtn" class="button is-primary">
+            <span class="icon">
+              <i class="fas fa-sync-alt"></i>
+            </span>
+            <span>Load Invitations</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="notification is-info is-light mb-4" id="statusMessage" style="display: none;">
+        <button class="delete" onclick="this.parentElement.style.display='none'"></button>
+        <span id="statusMessageText">Loading invitations...</span>
+      </div>
+
+      <div class="box" id="invitationsContainer">
+        <div class="is-flex is-justify-content-space-between mb-3">
+          <h2 class="title is-5 mb-0">Invitation List</h2>
+          <span class="tag is-primary is-light" id="invitationCount">0</span>
+        </div>
+        <div class="content">
+          <ul id="invitations" class="mb-0"></ul>
+        </div>
+        <div id="emptyState" class="has-text-centered p-6">
+          <p class="has-text-grey">No invitations loaded yet. Click the button above to load data.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    (async function(){
+      const token = localStorage.getItem('token') || prompt('Enter JWT token');
+      const statusMessage = document.getElementById('statusMessage');
+      const statusMessageText = document.getElementById('statusMessageText');
+      const emptyState = document.getElementById('emptyState');
+      const invitationCount = document.getElementById('invitationCount');
+      
+      document.getElementById('loadBtn').onclick = async () => {
+        try {
+          // Show loading state
+          statusMessage.style.display = 'block';
+          statusMessageText.textContent = 'Loading invitations...';
+          statusMessage.className = 'notification is-info is-light mb-4';
+          
+          const res = await fetch('/api/staff/invitations', {
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          
+          if (!res.ok) throw new Error(await res.text());
+          
+          const data = await res.json();
+          const ul = document.getElementById('invitations');
+          ul.innerHTML = '';
+          
+          if (data.length === 0) {
+            emptyState.innerHTML = '<p class="has-text-grey">No pending invitations found.</p>';
+            emptyState.style.display = 'block';
+          } else {
+            emptyState.style.display = 'none';
+            
+            data.forEach(inv => {
+              const li = document.createElement('li');
+              li.className = 'invitation-item card mb-3';
+              li.innerHTML = `
+                <div class="card-content">
+                  <div class="media">
+                    <div class="media-left">
+                      <span class="icon is-medium has-text-info">
+                        <i class="fas fa-user-plus fa-lg"></i>
+                      </span>
+                    </div>
+                    <div class="media-content">
+                      <p class="is-size-6"><strong>Folder:</strong> ${inv.folderName}</p>
+                      <p class="is-size-7 has-text-grey">
+                        <span class="icon-text">
+                          <span class="icon"><i class="fas fa-id-card"></i></span>
+                          <span>Invitation ID: ${inv.invitationId}</span>
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                  <div class="content is-small">
+                    <div class="tags">
+                      <span class="tag is-info is-light">
+                        <span class="icon"><i class="fas fa-user"></i></span>
+                        <span>Owner: ${inv.owner}</span>
+                      </span>
+                      <span class="tag is-success is-light">
+                        <span class="icon"><i class="fas fa-envelope"></i></span>
+                        <span>Invited: ${inv.invitedUsername}</span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              `;
+              ul.appendChild(li);
+            });
+          }
+          
+          // Update counter
+          invitationCount.textContent = data.length;
+          
+          // Show success message
+          statusMessageText.textContent = `Successfully loaded ${data.length} invitation(s)`;
+          statusMessage.className = 'notification is-success is-light mb-4';
+          
+          // Hide status message after 3 seconds
+          setTimeout(() => {
+            statusMessage.style.display = 'none';
+          }, 3000);
+          
+        } catch (err) {
+          statusMessage.className = 'notification is-danger is-light mb-4';
+          statusMessageText.textContent = 'Error: ' + err.message;
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Staff Dashboard – Welcome</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 2rem;
+      background: #f5f5f5;
+      color: #333;
+      transition: background 0.3s, color 0.3s;
+    }
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+    }
+    ul {
+      list-style: none;
+      padding-left: 0;
+    }
+    li {
+      margin: 0.5rem 0;
+    }
+    a {
+      display: block;
+      padding: 0.75rem;
+      background: #fff;
+      color: #0073aa;
+      border-radius: 6px;
+      border: 1px solid #ddd;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+    a:hover {
+      background: #eef6ff;
+    }
+    .toggle {
+      margin-top: 2rem;
+    }
+    .dark {
+      background: #121212;
+      color: #eee;
+    }
+    .dark a {
+      background: #1f1f1f;
+      color: #6ab7ff;
+      border-color: #333;
+    }
+    .dark a:hover {
+      background: #2c2c2c;
+    }
+  </style>
+</head>
+<body>
+  <h1>Welcome, Staff</h1>
+  <p>Select a tool:</p>
+  <ul>
+    <li><a href="list-invitations.html" target="_blank">📬 View Pending Invitations</a></li>
+    <li><a href="delete-invitation.html" target="_blank">❌ Remove an Invitation</a></li>
+    <li><a href="kick-friend.html" target="_blank">👢 Kick User from Folder</a></li>
+    <li><a href="scan-folder-contents.html" target="_blank">🔍 Scan Folder Metadata</a></li>
+    <li><a href="flag-folder.html" target="_blank">🚩 Flag Folder</a></li>
+    <li><a href="delete-folder.html" target="_blank">🗑️ Delete Folder</a></li>
+    <li><a href="lookup-user.html" target="_blank">👤 Lookup User Info</a></li>
+    <li><a href="reset-password.html" target="_blank">🔑 Reset User Password</a></li>
+    <li><a href="audit-log.html" target="_blank">📄 View Audit Log</a></li>
+  </ul>
+
+  <div class="toggle">
+    <button onclick="toggleDark()">🌗 Toggle Dark Mode</button>
+  </div>
+
+  <script>
+    function toggleDark() {
+      document.body.classList.toggle('dark');
+      localStorage.setItem('staff_darkmode', document.body.classList.contains('dark'));
+    }
+
+    if (localStorage.getItem('staff_darkmode') === 'true') {
+      document.body.classList.add('dark');
+    }
+    async function checkRole() {
+    try {
+        const token = localStorage.getItem('jwtToken');
+        const response = await fetch('/api/check-role', {
+            credentials: 'include',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        const data = await response.json();
+        
+        if (data.role !== 'staff') {
+            window.location.href = '/index.html';
+        }
+    } catch (error) {
+        console.error('Auth check failed:', error);
+        window.location.href = '/index.html';
+    }
+}
+
+
+
+        checkRole();
+  </script>
+</body>
+</html>

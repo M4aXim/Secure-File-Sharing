@@ -7,7 +7,6 @@ if (!OWNER_USERNAME) {
   process.exit(1);
 }
 
-
 const path               = require('path');
 const fsPromises         = require('fs').promises;
 const { createReadStream } = require('fs');
@@ -92,6 +91,14 @@ fastify.decorate('authenticate', async (req, reply) => {
   }
 });
 
+// --- STAFF ROLE DECORATOR ---
+fastify.decorate('verifyStaff', async (req, reply) => {
+  const role = req.user.role;
+  if (role !== 'staff' && req.user.username !== OWNER_USERNAME) {
+    return reply.forbidden('Only staff can perform this action');
+  }
+});
+
 // --- AUDIT LOGGING HELPER ---
 async function logActivity(req, activity, details = {}) {
   const ip    = req.ip || req.socket.remoteAddress || 'unknown';
@@ -139,11 +146,6 @@ async function ensureDataFiles() {
     fastify.log.info('Created audit.log');
   }
 }
-
-// // --- GLOBAL HOOK: log every completed request ---
-// fastify.addHook('onResponse', async (req, reply) => {
-//   await logActivity(req, 'request-complete', { statusCode: reply.statusCode });
-// });
 
 // --- DOWNLOAD TOKEN MANAGEMENT ---
 const downloadTokens = new Map();
@@ -635,6 +637,253 @@ fastify.post('/api/law-enforcement-request/:username', { preHandler: [fastify.au
 
   await logActivity(req, 'law-enforcement-request', { targetUser, sentTo: email });
   return reply.send({ message: 'Activity report emailed successfully.' });
+});
+fastify.post('/api/change-your-password', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) {
+    return reply.badRequest('Missing old or new password');
+  }
+  if (newPassword.length < 8) {
+    return reply.badRequest('New password too short');
+  }
+  if (newPassword === oldPassword) {
+    return reply.badRequest('New password cannot be the same as old password');
+  }
+
+  try {
+    const user = await usersColl.findOne({ username: req.user.username });
+    if (!user) {
+      return reply.notFound('User not found');
+    }
+
+    const validPassword = await bcrypt.compare(oldPassword, user.password);
+    if (!validPassword) {
+      return reply.unauthorized('Invalid old password');
+    }
+
+    const hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    await usersColl.updateOne(
+      { username: req.user.username },
+      { $set: { password: hash }}
+    );
+
+    await logActivity(req, 'change-password', { username: req.user.username });
+    return reply.send({ message: 'Password changed successfully' });
+
+  } catch (err) {
+    fastify.log.error(err);
+    return reply.internalServerError('Error changing password');
+  }
+});
+
+
+// POST /api/owner/make-staff-account
+fastify.post('/api/owner/make-staff-account', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  if (req.user.username !== OWNER_USERNAME) {
+    return reply.forbidden('Only owner can create staff accounts');
+  }
+
+  const { username, password, email } = req.body;
+  if (!username || !password || !email) {
+    return reply.code(400).send({ error: 'Missing fields' });
+  }
+  if (password.length < 8) {
+    return reply.code(400).send({ error: 'Password too short' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return reply.code(400).send({ error: 'Invalid email' });
+  }
+
+  try {
+    if (await usersColl.findOne({ username })) {
+      return reply.code(409).send({ error: 'User already exists' });
+    }
+    if (await usersColl.findOne({ email })) {
+      return reply.code(409).send({ error: 'E-mail already in use' });
+    }
+
+    const hash = await bcrypt.hash(password, SALT_ROUNDS);
+    await usersColl.insertOne({
+      username,
+      password: hash,
+      email,
+      role:      'staff',
+      createdAt: new Date().toISOString()
+    });
+
+    await logActivity(req, 'make-staff-account', { username, email });
+    return reply.code(201).send({ message: 'Staff account created successfully' });
+  } catch (err) {
+    fastify.log.error(err);
+    return reply.code(500).send({ error: 'Internal server error' });
+  }
+});
+
+// --- STAFF PERMISSIONS ENDPOINTS ---
+
+// View all pending invitations
+fastify.get('/api/staff/invitations', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const pending = folders.filter(f => f.invitationId);
+  return pending.map(f => ({
+    folderId:        f.folderId,
+    folderName:      f.folderName,
+    owner:           f.owner,
+    invitedUsername: f.invitedUsername,
+    invitationId:    f.invitationId
+  }));
+});
+
+// Remove any user's shared-folder invitation
+fastify.delete('/api/staff/invitations/:invitationId', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const { invitationId } = req.params;
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder  = folders.find(f => f.invitationId === invitationId);
+  if (!folder) return reply.notFound('Invitation not found');
+
+  folder.invitationId   = null;
+  folder.invitedUsername = null;
+  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+  await logActivity(req, 'staff-remove-invitation', { invitationId, folderId: folder.folderId });
+  return reply.send({ message: 'Invitation removed' });
+});
+
+// Kick a friend out of a shared folder
+fastify.delete('/api/staff/folders/:folderId/friends/:friendUsername', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const { folderId, friendUsername } = req.params;
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder  = folders.find(f => f.folderId === folderId);
+  if (!folder) return reply.notFound('Folder not found');
+
+  folder.friends = (folder.friends || []).filter(u => u !== friendUsername);
+  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+  await logActivity(req, 'staff-remove-friend', { folderId, friendUsername });
+  return reply.send({ message: `User ${friendUsername} removed from folder` });
+});
+
+// Scan folder contents metadata (but not download files)
+fastify.get('/api/staff/folder-contents', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const { folderId } = req.query;
+  if (!folderId) return reply.badRequest('folderId is required');
+
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const meta    = folders.find(f => f.folderId === folderId);
+  if (!meta) return reply.notFound('Folder not found');
+
+  const folderPath = path.join(FOLDERS_DIR, folderId);
+  const files      = await fsPromises.readdir(folderPath);
+  const list       = await Promise.all(files.map(async file => {
+    const stats = await fsPromises.stat(path.join(folderPath, file));
+    return {
+      filename: file,
+      size:     stats.size,
+      created:  stats.birthtime,
+      modified: stats.mtime,
+      type:     path.extname(file)
+    };
+  }));
+
+  await logActivity(req, 'staff-scan-folder', { folderId });
+  return list;
+});
+
+// Flag a folder that violates policy
+fastify.post('/api/staff/flag-folder/:folderId', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const { folderId } = req.params;
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder  = folders.find(f => f.folderId === folderId);
+  if (!folder) return reply.notFound('Folder not found');
+
+  folder.flagged = true;
+  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+  await logActivity(req, 'staff-flag-folder', { folderId });
+  return reply.send({ message: 'Folder flagged' });
+});
+
+// Delete an entire folder
+fastify.delete('/api/staff/folders/:folderId', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const { folderId } = req.params;
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const index   = folders.findIndex(f => f.folderId === folderId);
+  if (index === -1) return reply.notFound('Folder not found');
+
+  // remove directory
+  await fsPromises.rm(path.join(FOLDERS_DIR, folderId), { recursive: true, force: true });
+  folders.splice(index, 1);
+  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+  await logActivity(req, 'staff-delete-folder', { folderId });
+  return reply.send({ message: 'Folder deleted' });
+});
+
+// Look up a user's account details
+fastify.get('/api/staff/users/:username', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const { username } = req.params;
+  const user = await usersColl.findOne({ username }, { projection: { password: 0 } });
+  if (!user) return reply.notFound('User not found');
+  await logActivity(req, 'staff-view-user', { username });
+  return {
+    username: user.username,
+    email:    user.email,
+    role:     user.role,
+    createdAt: user.createdAt
+  };
+});
+
+// Reset a user's password
+fastify.post('/api/staff/reset-password/:username', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const { username } = req.params;
+  const user = await usersColl.findOne({ username });
+  if (!user) return reply.notFound('User not found');
+
+  const newPass = crypto.randomBytes(6).toString('hex');
+  const hash    = await bcrypt.hash(newPass, SALT_ROUNDS);
+  await usersColl.updateOne({ username }, { $set: { password: hash } });
+
+  try {
+    await transporter.sendMail({
+      from: `"Support" <${process.env.EMAIL_USER}>`,
+      to: user.email,
+      subject: 'Your password has been reset',
+      text: `Hello ${username},\n\nYour new password is: ${newPass}\n\nPlease change it after logging in.\n`
+    });
+  } catch (err) {
+    fastify.log.error(err);
+    return reply.internalServerError('Failed to send reset email');
+  }
+
+  await logActivity(req, 'staff-reset-password', { username });
+  return reply.send({ message: 'Password reset email sent' });
+});
+
+// Read-only audit log access
+fastify.get('/api/staff/audit-log', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  let { limit } = req.query;
+  limit = parseInt(limit, 10) || 100;
+  if (limit > 1000) limit = 1000;
+
+  const raw   = await fsPromises.readFile(AUDIT_LOG, 'utf8');
+  const lines = raw.trim().split('\n').filter(Boolean);
+  const entries = lines
+    .slice(-limit)
+    .map(line => {
+      try { return JSON.parse(line); }
+      catch { return null; }
+    })
+    .filter(Boolean);
+
+  await logActivity(req, 'staff-view-audit-log', { limit });
+  return entries;
+});
+
+fastify.get('/api/staff/get-for-all-folders-ID', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folderIds = folders.map(f => f.folderId);
+  return { folderIds };
+});
+
+
+fastify.get('/api/check-role', { preHandler: [fastify.authenticate] }, async (req) => {
+  return { role: req.user.role };
 });
 
 // SPA fallback

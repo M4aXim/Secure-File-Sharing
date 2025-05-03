@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staff login</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+        }
+        label {
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        input {
+            margin-bottom: 10px;
+            padding: 10px;
+            width: 200px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <label>Login</label>
+    <input type="text" id="username" placeholder="Username">
+    <input type="password" id="password" placeholder="Password">
+    <button id="login">Login</button>
+
+    <script>
+        document.getElementById('login').addEventListener('click', async () => {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+    
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+    
+                const data = await response.json();
+                
+                if (response.ok) {
+                    localStorage.setItem('jwtToken', data.token);
+                    if (data.user.role === 'staff') {
+                        window.location.href = '/staff/Hello.html';
+                    } else {
+                        window.location.href = '/index.html';
+                    }
+                } else {
+                    alert(data.error);
+                }
+            } catch (err) {
+                alert('Error during login');
+            }
+        });
+    </script>
+    
+</body>
+</html>
