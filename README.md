@@ -72,11 +72,28 @@ All logs are saved to `audit.log` in JSON format, readable by staff via API. Thi
 ---
 
 ## 🧑‍🔧 Technical Stack
+
 * **Backend:** Node.js + Fastify  
 * **Database:** MongoDB (hosted or local)  
 * **Frontend:** Static HTML, CSS (Bulma), JavaScript  
-* **File storage:** Local filesystem (can be switched to cloud later)  
+* **File storage:** AWS S3 (cloud-based file storage)  
 * **Email:** Nodemailer via SMTP (supports Gmail, Proton, etc.)  
+
+---
+
+## 🧰 Technical Changes
+
+### **File Storage: AWS S3 Integration**
+* The file storage system has been updated to use **AWS S3** instead of the local file system. This change improves scalability and makes it easier to manage large files.
+
+### **Folder Contents Listing**
+* Files in folders are now listed using the **AWS S3 API** with `listObjectsV2`. This allows users to see their file metadata (size, timestamp, type) without accessing local storage.
+
+### **Uploading Files to S3**
+* Files are uploaded directly to **AWS S3** using `s3.upload()` instead of being written to the local filesystem.
+
+### **Downloading and Viewing Files**
+* Files are downloaded via the **AWS S3 API** using `getObject()` and can be streamed directly to the client.
 
 ---
 
@@ -112,6 +129,10 @@ EMAIL_USER=your@email.com
 EMAIL_PASS=yourpassword
 BCC=support@yourdomain.com
 
+# AWS S3 Configuration
+AWS_REGION=your-region
+S3_BUCKET_NAME=your-s3-bucket-name
+
 # Optional
 RATE_LIMIT_MAX=100
 RATE_LIMIT_WINDOW=1 minute
@@ -136,7 +157,7 @@ Then visit http://localhost:3000 in your browser.
 | contact.html | Contact form for user support |
 | privacy.html | Privacy policy page |
 | TOS.html | Terms of Service page |
-| law.html | A formal notice outlining FileShare’s policy on misuse, affirming cooperation with law enforcement and providing contact details for reporting abuse.|
+| law.html | A formal notice outlining FileShare's policy on misuse, affirming cooperation with law enforcement and providing contact details for reporting abuse. |
 | media_view-redirector.html | Dynamic redirect to media viewers |
 | mp3.html | Audio file viewer |
 | mp4.html | Video file viewer |
