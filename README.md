@@ -130,6 +130,8 @@ EMAIL_PASS=yourpassword
 BCC=support@yourdomain.com
 
 # AWS S3 Configuration
+AWS_ACCESS_KEY_ID=Key_ID
+AWS_SECRET_ACCESS_KEY=Access_Key
 AWS_REGION=your-region
 S3_BUCKET_NAME=your-s3-bucket-name
 
