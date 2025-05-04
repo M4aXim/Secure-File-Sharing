@@ -1,107 +1,175 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <title>Staff – Kick Friend</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Arial, sans-serif;
-            padding: 2rem;
-            background: #f0f2f5;
-            max-width: 600px;
-            margin: 0 auto;
-            line-height: 1.6;
-        }
-        h1 {
-            color: #1a73e8;
-            margin-bottom: 2rem;
-            text-align: center;
-        }
-        form {
-            background: white;
-            padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        label {
-            display: block;
-            margin-bottom: 1rem;
-            color: #444;
-        }
-        input {
-            width: 100%;
-            padding: 0.75rem;
-            margin-top: 0.5rem;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-        button {
-            width: 100%;
-            padding: 0.75rem;
-            background: #1a73e8;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 1rem;
-            margin-top: 1rem;
-            transition: background 0.2s;
-        }
-        button:hover {
-            background: #1557b0;
-        }
-        #result {
-            margin-top: 1rem;
-            padding: 1rem;
-            border-radius: 4px;
-            text-align: center;
-            color: #d32f2f;
-        }
-        #result.success {
-            color: #2e7d32;
-            background: #e8f5e9;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Staff – Kick Friend</title>
+  <!-- Bulma CSS Framework -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    .page-container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .hero.is-info {
+      background: linear-gradient(135deg, #1a73e8, #185abc);
+    }
+    .form-card {
+      border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+    }
+    .button.is-info {
+      background-color: #1a73e8;
+      transition: background-color 0.2s;
+    }
+    .button.is-info:hover {
+      background-color: #1557b0;
+    }
+    #result {
+      display: none;
+      transition: all 0.3s ease;
+    }
+  </style>
 </head>
 <body>
-    <h1>Kick a Friend from Folder</h1>
-    <form id="form">
-        <label>
-            Folder ID
-            <input type="text" id="folderId" required placeholder="Enter folder ID" />
-        </label>
-        <label>
-            Friend Username
-            <input type="text" id="friendUsername" required placeholder="Enter username" />
-        </label>
-        <button type="submit">Kick Friend</button>
-    </form>
-    <div id="result"></div>
-    <script>
-        (async function(){
-            const token = localStorage.getItem('token') || prompt('Enter JWT token');
-            document.getElementById('form').onsubmit = async e => {
-                e.preventDefault();
-                const folderId = document.getElementById('folderId').value.trim();
-                const friendUsername = document.getElementById('friendUsername').value.trim();
-                const resultDiv = document.getElementById('result');
-                try {
-                    const res = await fetch(`/api/staff/folders/${folderId}/friends/${friendUsername}`, {
-                        method: 'DELETE',
-                        headers: { 'Authorization': 'Bearer ' + token }
-                    });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.error || data.message || res.statusText);
-                    resultDiv.textContent = data.message;
-                    resultDiv.className = 'success';
-                } catch (err) {
-                    resultDiv.textContent = 'Error: ' + err.message;
-                    resultDiv.className = '';
-                }
-            };
-        })();
-    </script>
+  <!-- Header -->
+  <section class="hero is-info">
+    <div class="hero-body">
+      <div class="container has-text-centered">
+        <h1 class="title">
+          <i class="fas fa-user-minus mr-2"></i>Kick a Friend from Folder
+        </h1>
+        <p class="subtitle">Staff administration tool</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="page-container">
+      <!-- Form Card -->
+      <div class="card form-card">
+        <div class="card-content">
+          <form id="form">
+            <div class="field">
+              <label class="label">Folder ID</label>
+              <div class="control has-icons-left">
+                <input class="input" type="text" id="folderId" required placeholder="Enter folder ID">
+                <span class="icon is-small is-left">
+                  <i class="fas fa-folder"></i>
+                </span>
+              </div>
+              <p class="help">The unique identifier of the folder</p>
+            </div>
+
+            <div class="field">
+              <label class="label">Friend Username</label>
+              <div class="control has-icons-left">
+                <input class="input" type="text" id="friendUsername" required placeholder="Enter username">
+                <span class="icon is-small is-left">
+                  <i class="fas fa-user"></i>
+                </span>
+              </div>
+              <p class="help">Username of the friend to remove from folder</p>
+            </div>
+
+            <div class="field">
+              <div class="control">
+                <button type="submit" class="button is-info is-fullwidth">
+                  <span class="icon">
+                    <i class="fas fa-user-minus"></i>
+                  </span>
+                  <span>Kick Friend</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Result Notification -->
+      <div id="result" class="notification mt-4">
+        <button class="delete" onclick="document.getElementById('result').style.display='none'"></button>
+        <div id="resultMessage"></div>
+      </div>
+
+      <!-- Loading indicator -->
+      <div id="loadingIndicator" class="has-text-centered mt-4" style="display: none;">
+        <progress class="progress is-info" max="100"></progress>
+        <p class="has-text-grey">Processing request...</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="content has-text-centered">
+      <p class="has-text-grey is-size-7">
+        <strong>Staff Administration Panel</strong> • Authorized Personnel Only
+      </p>
+    </div>
+  </footer>
+
+  <script>
+    (async function(){
+      // Get or request authentication token
+      const token = localStorage.getItem('jwtToken') || prompt('Enter JWT token');
+      
+      // DOM elements
+      const form = document.getElementById('form');
+      const resultDiv = document.getElementById('result');
+      const resultMessage = document.getElementById('resultMessage');
+      const loadingIndicator = document.getElementById('loadingIndicator');
+      
+      // Form submission handler
+      form.onsubmit = async e => {
+        e.preventDefault();
+        
+        // Get form values
+        const folderId = document.getElementById('folderId').value.trim();
+        const friendUsername = document.getElementById('friendUsername').value.trim();
+        
+        // Show loading, hide any previous results
+        loadingIndicator.style.display = 'block';
+        resultDiv.style.display = 'none';
+        
+        try {
+          // Make API request
+          const res = await fetch(`/api/staff/folders/${folderId}/friends/${friendUsername}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+          });
+          
+          // Parse the response data
+          const data = await res.json();
+          
+          // Handle errors
+          if (!res.ok) {
+            throw new Error(data.error || data.message || res.statusText);
+          }
+          
+          // Show success message
+          resultMessage.innerHTML = `<strong>Success!</strong> ${data.message || 'Friend was removed from the folder.'}`;
+          resultDiv.className = 'notification is-success';
+          resultDiv.style.display = 'block';
+          
+          // Clear form inputs on success
+          document.getElementById('friendUsername').value = '';
+          
+        } catch (err) {
+          // Show error message
+          resultMessage.innerHTML = `<strong>Error:</strong> ${err.message}`;
+          resultDiv.className = 'notification is-danger';
+          resultDiv.style.display = 'block';
+        } finally {
+          // Hide loading indicator
+          loadingIndicator.style.display = 'none';
+          
+          // Scroll to result
+          resultDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      };
+    })();
+  </script>
 </body>
 </html>

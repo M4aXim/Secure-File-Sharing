@@ -70,7 +70,7 @@
 
   <script>
     (async function(){
-      const token = localStorage.getItem('token') || prompt('Enter JWT token');
+      const token = localStorage.getItem('jwtToken') || prompt('Enter JWT token');
       const statusMessage = document.getElementById('statusMessage');
       const statusMessageText = document.getElementById('statusMessageText');
       const emptyState = document.getElementById('emptyState');
@@ -126,9 +126,6 @@
                         <span class="icon"><i class="fas fa-user"></i></span>
                         <span>Owner: ${inv.owner}</span>
                       </span>
-                      <span class="tag is-success is-light">
-                        <span class="icon"><i class="fas fa-envelope"></i></span>
-                        <span>Invited: ${inv.invitedUsername}</span>
                       </span>
                     </div>
                   </div>

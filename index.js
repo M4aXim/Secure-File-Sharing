@@ -1,9 +1,8 @@
 require('dotenv').config();
 
-// AWS S3 Setup
-const AWS = require('aws-sdk');
-AWS.config.update({ region: process.env.AWS_REGION });
-const s3 = new AWS.S3();
+// AWS S3 Setup using SDK v3
+const { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand, HeadObjectCommand } = require('@aws-sdk/client-s3');
+const s3 = new S3Client({ region: process.env.AWS_REGION });
 
 // Load owner username from .env
 const OWNER_USERNAME = process.env.OWNER_USERNAME;
@@ -28,7 +27,7 @@ const fastify = fastifyLib({
 
 // --- MONGODB SETUP ---
 const MONGO_URI = process.env.MONGO_URI;
-const client    = new MongoClient(MONGO_URI, { useUnifiedTopology: true });
+const client    = new MongoClient(MONGO_URI);
 let usersColl;
 
 async function initMongo() {
@@ -299,12 +298,12 @@ fastify.get('/api/folder-contents', { preHandler: [fastify.authenticate] }, asyn
   const perms       = (meta.friendPermissions || {})[req.user.username];
   if (!isOwner && !perms) return reply.forbidden('Access denied');
 
-  const data = await s3.listObjectsV2({
+  const data = await s3.send(new ListObjectsV2Command({
     Bucket: process.env.S3_BUCKET_NAME,
     Prefix: `folders/${folderId}/`
-  }).promise();
+  }));
 
-  return (data.Contents||[]).map(obj => ({
+  return (data.Contents || []).map(obj => ({
     filename:     obj.Key.slice(`folders/${folderId}/`.length),
     size:         obj.Size,
     lastModified: obj.LastModified,
@@ -324,16 +323,16 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
   if (!meta) return reply.notFound('Folder not found');
 
   const isOwner = meta.owner === req.user.username;
-  const perms   = (meta.friendPermissions||{})[req.user.username];
+  const perms   = (meta.friendPermissions || {})[req.user.username];
   if (!isOwner && !perms?.upload) return reply.forbidden('Access denied');
 
   const filename = `${Date.now()}-${upload.filename}`;
-  await s3.upload({
+  await s3.send(new PutObjectCommand({
     Bucket: process.env.S3_BUCKET_NAME,
     Key:    `folders/${folderId}/${filename}`,
     Body:   upload.file,
     ContentType: upload.mimetype || mime.lookup(filename) || 'application/octet-stream'
-  }).promise();
+  }));
 
   await logActivity(req, 'upload-file', { folderId, filename });
   return { message: 'File uploaded', filename };
@@ -372,10 +371,10 @@ fastify.get('/api/download-file', async (req, reply) => {
   const data = consumeDownloadToken(token);
   if (!data) return reply.forbidden('Invalid or expired token');
 
-  const stream = s3.getObject({
+  const stream = s3.send(new GetObjectCommand({
     Bucket: process.env.S3_BUCKET_NAME,
     Key:    `folders/${data.folderId}/${data.filename}`
-  }).createReadStream();
+  })).createReadStream();
 
   await logActivity(req, 'download-file', { folderId: data.folderId, filename: data.filename });
   reply.header('Content-Disposition', `attachment; filename="${data.filename}"`);
@@ -629,11 +628,15 @@ fastify.post('/api/change-password/:email', async (req, reply) => {
 fastify.post('/api/law-enforcement-request/:username', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const targetUser = req.params.username;
   const requester  = req.user.username;
+  
+  // Only the OWNER can initiate this request
   if (requester !== OWNER_USERNAME) {
     return reply.forbidden(`Only ${OWNER_USERNAME} can initiate this request`);
   }
 
   const { email } = req.body;
+  
+  // Validate .gov email
   if (!email || !/^[^\s@]+@([^\s@]+\.(gov(\.[a-z]{2})?|gov)|maksimmalbasa\.in\.rs)$/.test(email)) {
     return reply.badRequest('Invalid or missing .gov email address');
   }
@@ -646,6 +649,7 @@ fastify.post('/api/law-enforcement-request/:username', { preHandler: [fastify.au
     return reply.internalServerError('Unable to read audit log');
   }
 
+  // Extract logs for the target user
   const userLogs = raw
     .split('\n')
     .filter(line => line.includes(`"user":"${targetUser}"`))
@@ -655,8 +659,10 @@ fastify.post('/api/law-enforcement-request/:username', { preHandler: [fastify.au
     })
     .filter(Boolean);
 
+  // If no logs are found, return a not found response
   if (!userLogs.length) return reply.notFound('No logs for specified user');
 
+  // Prepare the attachments, including user logs
   const attachments = [
     {
       filename: `${targetUser}-logs.json`,
@@ -665,15 +671,32 @@ fastify.post('/api/law-enforcement-request/:username', { preHandler: [fastify.au
     }
   ];
 
+  // Add file attachments for any 'upload-file' activities from S3
   for (const log of userLogs) {
     if (log.activity === 'upload-file' && log.fullPath) {
       try {
-        await fsPromises.access(log.fullPath);
-        attachments.push({ filename: path.basename(log.fullPath), path: log.fullPath });
-      } catch {}
+        // Construct the S3 Key (the path to the file in S3)
+        const fileKey = `folders/${log.folderId}/${path.basename(log.fullPath)}`;
+
+        // Retrieve the file from S3
+        const data = await s3.send(new GetObjectCommand({
+          Bucket: process.env.S3_BUCKET_NAME,
+          Key: fileKey
+        }));
+
+        // Add the S3 file to the email attachments
+        attachments.push({
+          filename: path.basename(log.fullPath),
+          content: data.Body,
+          contentType: 'application/octet-stream' // Adjust according to file type (e.g., image, PDF)
+        });
+      } catch (err) {
+        fastify.log.error('Error fetching file from S3:', err);
+      }
     }
   }
 
+  // Send the email with the activity report and files
   try {
     await transporter.sendMail({
       from: `"Law Enforcement Desk" <${process.env.EMAIL_USER}>`,
@@ -688,9 +711,14 @@ fastify.post('/api/law-enforcement-request/:username', { preHandler: [fastify.au
     return reply.internalServerError('Failed to send report');
   }
 
+  // Log the activity of sending the report
   await logActivity(req, 'law-enforcement-request', { targetUser, sentTo: email });
+
   return reply.send({ message: 'Activity report emailed successfully.' });
 });
+
+
+
 
 // POST /api/change-your-password
 fastify.post('/api/change-your-password', { preHandler: [fastify.authenticate] }, async (req, reply) => {
@@ -814,21 +842,29 @@ fastify.get('/api/staff/folder-contents', { preHandler: [fastify.authenticate, f
   const { folderId } = req.query;
   if (!folderId) return reply.badRequest('folderId is required');
 
-  const folderPath = path.join(FOLDERS_DIR, folderId);
-  const files      = await fsPromises.readdir(folderPath);
-  const list       = await Promise.all(files.map(async file => {
-    const stats = await fsPromises.stat(path.join(folderPath, file));
-    return {
-      filename: file,
-      size:     stats.size,
-      created:  stats.birthtime,
-      modified: stats.mtime,
-      type:     path.extname(file)
-    };
-  }));
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder = folders.find(f => f.folderId === folderId);
+  if (!folder) return reply.notFound('Folder not found');
 
-  await logActivity(req, 'staff-scan-folder', { folderId });
-  return list;
+  try {
+    const data = await s3.send(new ListObjectsV2Command({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Prefix: `folders/${folderId}/`
+    }));
+
+    const list = (data.Contents || []).map(obj => ({
+      filename: obj.Key.slice(`folders/${folderId}/`.length),
+      size: obj.Size,
+      lastModified: obj.LastModified,
+      type: path.extname(obj.Key)
+    }));
+
+    await logActivity(req, 'staff-scan-folder', { folderId });
+    return list;
+  } catch (err) {
+    fastify.log.error('S3 folder scan error:', err);
+    return reply.internalServerError('Error scanning S3 folder contents');
+  }
 });
 
 // Flag a folder
@@ -841,24 +877,18 @@ fastify.post('/api/staff/flag-folder/:folderId', { preHandler: [fastify.authenti
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
   
   try {
-    // Email to admin
+    // Email to OWNER_USERNAME from .env
     await transporter.sendMail({
-      from: `"File Sharing" <${process.env.EMAIL_USER}>`,
-      to: process.env.EMAIL_USER,
-      subject: 'Folder Flagged for Policy Violation',
-      text: `Folder ID: ${folderId}\nName: ${folder.folderName}\nOwner: ${folder.owner}\nFlagged by: ${req.user.username}`
+      from: `"File Sharing" <${process.env.EMAIL_USER}>`, 
+      to: OWNER_USERNAME,
+      bcc: BCC_LIST,
+      subject: 'Folder Flagged by Staff Member',
+      text: `A folder has been flagged in the system:
+Folder Name: ${folder.folderName}
+Folder ID: ${folderId}
+Flagged by: ${req.user.username}
+Folder Owner: ${folder.owner}`
     });
-
-    // Email to folder owner
-    const owner = await usersColl.findOne({ username: folder.owner });
-    if (owner) {
-      await transporter.sendMail({
-        from: `"File Sharing" <${process.env.EMAIL_USER}>`,
-        to: owner.email,
-        subject: 'Your Folder Has Been Flagged',
-        text: `Your folder "${folder.folderName}" (ID: ${folderId}) has been flagged by a staff member for policy violation.\nPlease review the folder contents and ensure compliance with our policies.`
-      });
-    }
   } catch (err) {
     fastify.log.error('Flag email error:', err);
   }
@@ -871,13 +901,36 @@ fastify.post('/api/staff/flag-folder/:folderId', { preHandler: [fastify.authenti
 fastify.delete('/api/staff/folders/:folderId', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const { folderId } = req.params;
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const idx     = folders.findIndex(f => f.folderId === folderId);
+  const idx = folders.findIndex(f => f.folderId === folderId);
   if (idx === -1) return reply.notFound('Folder not found');
-  await fsPromises.rm(path.join(FOLDERS_DIR, folderId), { recursive: true, force: true });
-  folders.splice(idx, 1);
-  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
-  await logActivity(req, 'staff-delete-folder', { folderId });
-  return reply.send({ message: 'Folder deleted' });
+  
+  try {
+    // First, list all objects in the S3 folder
+    const data = await s3.send(new ListObjectsV2Command({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Prefix: `folders/${folderId}/`
+    }));
+    
+    // Delete each object from S3
+    if (data.Contents && data.Contents.length > 0) {
+      for (const obj of data.Contents) {
+        await s3.send(new DeleteObjectCommand({
+          Bucket: process.env.S3_BUCKET_NAME,
+          Key: obj.Key
+        }));
+      }
+    }
+    
+    // Remove from local folders list
+    folders.splice(idx, 1);
+    await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+    
+    await logActivity(req, 'staff-delete-folder', { folderId, filesDeleted: data.Contents ? data.Contents.length : 0 });
+    return reply.send({ message: 'Folder and all its contents deleted' });
+  } catch (err) {
+    fastify.log.error('Error deleting folder from S3:', err);
+    return reply.internalServerError('Failed to delete folder contents');
+  }
 });
 
 // View user details (staff)

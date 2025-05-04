@@ -1,42 +1,162 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Staff – Delete Folder</title>
+  <!-- Bulma CSS Framework -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    body { font-family: Arial, sans-serif; padding: 2rem; background: #f9f9f9; }
-    h1 { margin-bottom: 1rem; }
-    form { margin-bottom: 1rem; }
-    input, button { padding: .5rem; }
-    #result { margin-top: 1rem; }
+    .delete-container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .hero.is-danger {
+      background: linear-gradient(135deg, #ff3860, #cc0f35);
+    }
+    .confirmation-modal {
+      display: none;
+    }
   </style>
 </head>
 <body>
-  <h1>Delete Folder</h1>
-  <form id="form">
-    <label>Folder ID: <input type="text" id="folderId" required /></label>
-    <button type="submit">Delete</button>
-  </form>
-  <div id="result"></div>
+  <!-- Header -->
+  <section class="hero is-danger">
+    <div class="hero-body">
+      <div class="container">
+        <h1 class="title">
+          <i class="fas fa-trash-alt mr-2"></i>Delete Folder
+        </h1>
+        <p class="subtitle">Staff administrative panel</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="delete-container">
+      <!-- Warning message -->
+      <div class="notification is-warning mb-5">
+        <button class="delete" onclick="this.parentNode.style.display='none'"></button>
+        <strong><i class="fas fa-exclamation-triangle mr-2"></i>Warning:</strong> 
+        This action permanently deletes a folder and all its contents. This cannot be undone.
+      </div>
+      
+      <!-- Form in a box -->
+      <div class="box">
+        <form id="form">
+          <div class="field">
+            <label class="label">Folder ID</label>
+            <div class="control has-icons-left">
+              <input class="input" type="text" id="folderId" placeholder="Enter folder ID" required>
+              <span class="icon is-small is-left">
+                <i class="fas fa-folder"></i>
+              </span>
+            </div>
+            <p class="help">Enter the unique identifier of the folder you want to delete</p>
+          </div>
+          
+          <div class="field is-grouped mt-5">
+            <div class="control">
+              <button type="submit" class="button is-danger">
+                <span class="icon">
+                  <i class="fas fa-trash-alt"></i>
+                </span>
+                <span>Delete Folder</span>
+              </button>
+            </div>
+            <div class="control">
+              <button type="reset" class="button is-light">Cancel</button>
+            </div>
+          </div>
+        </form>
+      </div>
+      
+      <!-- Results area -->
+      <div id="resultContainer" class="mt-5" style="display: none;">
+        <div class="notification is-light" id="resultNotification">
+          <button class="delete" onclick="document.getElementById('resultContainer').style.display='none'"></button>
+          <div id="result"></div>
+        </div>
+      </div>
+      
+      <!-- Loading indicator -->
+      <div id="loadingIndicator" class="has-text-centered mt-5" style="display: none;">
+        <progress class="progress is-danger" max="100"></progress>
+        <p>Deleting folder...</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="content has-text-centered">
+      <p><strong>Folder Management</strong> • Administrative Access Only</p>
+    </div>
+  </footer>
+
   <script>
     (async function(){
-      const token = localStorage.getItem('token') || prompt('Enter JWT token');
-      document.getElementById('form').onsubmit = async e => {
+      // Get or request the JWT token
+      const token = localStorage.getItem('jwtToken') || prompt('Enter JWT token');
+      
+      // Get DOM elements
+      const form = document.getElementById('form');
+      const resultContainer = document.getElementById('resultContainer');
+      const resultNotification = document.getElementById('resultNotification');
+      const resultElement = document.getElementById('result');
+      const loadingIndicator = document.getElementById('loadingIndicator');
+      
+      // Handle form submission
+      form.onsubmit = async e => {
         e.preventDefault();
         const folderId = document.getElementById('folderId').value.trim();
+        
+        if (!folderId) {
+          showResult('Please enter a folder ID', 'is-warning');
+          return;
+        }
+        
+        // Show loading indicator
+        loadingIndicator.style.display = 'block';
+        resultContainer.style.display = 'none';
+        
         try {
           const res = await fetch(`/api/staff/folders/${folderId}`, {
             method: 'DELETE',
             headers: { 'Authorization': 'Bearer ' + token }
           });
+          
           const data = await res.json();
-          if (!res.ok) throw new Error(data.error || data.message || res.statusText);
-          document.getElementById('result').textContent = data.message;
+          
+          if (!res.ok) {
+            throw new Error(data.error || data.message || res.statusText);
+          }
+          
+          // Show success message
+          showResult(`<strong>Success!</strong> ${data.message || 'Folder deleted successfully.'}`, 'is-success');
+          
+          // Clear the form
+          document.getElementById('folderId').value = '';
+          
         } catch (err) {
-          document.getElementById('result').textContent = 'Error: ' + err.message;
+          // Show error message
+          showResult(`<strong>Error:</strong> ${err.message}`, 'is-danger');
+        } finally {
+          // Hide loading indicator
+          loadingIndicator.style.display = 'none';
         }
       };
+      
+      // Helper function to show results
+      function showResult(message, type = 'is-info') {
+        resultElement.innerHTML = message;
+        resultNotification.className = `notification ${type} is-light`;
+        resultContainer.style.display = 'block';
+        
+        // Scroll to result if it's not in view
+        resultContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     })();
   </script>
 </body>

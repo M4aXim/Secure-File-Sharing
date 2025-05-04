@@ -4,24 +4,42 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Staff – Lookup User</title>
-  <style>
-    body { font-family: Arial, sans-serif; padding: 2rem; background: #f9f9f9; }
-    h1 { margin-bottom: 1rem; }
-    form { margin-bottom: 1rem; }
-    input, button { padding: .5rem; }
-    pre { background: #fff; padding: 1rem; border: 1px solid #ddd; }
-  </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-  <h1>Lookup User</h1>
-  <form id="form">
-    <label>Username: <input type="text" id="username" required /></label>
-    <button type="submit">Fetch</button>
-  </form>
-  <pre id="output"></pre>
+  <section class="section">
+    <div class="container">
+      <h1 class="title is-3">Lookup User</h1>
+      
+      <form id="form" class="mb-5">
+        <div class="field has-addons">
+          <div class="control has-icons-left is-expanded">
+            <input class="input" type="text" id="username" placeholder="Enter username" required />
+            <span class="icon is-small is-left">
+              <i class="fas fa-user"></i>
+            </span>
+          </div>
+          <div class="control">
+            <button type="submit" class="button is-primary">
+              <span class="icon">
+                <i class="fas fa-search"></i>
+              </span>
+              <span>Fetch</span>
+            </button>
+          </div>
+        </div>
+      </form>
+      
+      <div class="box">
+        <pre id="output" class="has-background-light p-4" style="border-radius: 4px; max-height: 500px; overflow: auto;"></pre>
+      </div>
+    </div>
+  </section>
+
   <script>
     (async function(){
-      const token = localStorage.getItem('token') || prompt('Enter JWT token');
+      const token = localStorage.getItem('jwtToken') || prompt('Enter JWT token');
       document.getElementById('form').onsubmit = async e => {
         e.preventDefault();
         const username = document.getElementById('username').value.trim();

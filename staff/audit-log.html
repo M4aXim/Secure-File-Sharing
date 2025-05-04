@@ -1,41 +1,154 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Staff – Audit Log</title>
+  <!-- Bulma CDN -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    body { font-family: Arial, sans-serif; padding: 2rem; background: #f9f9f9; }
-    h1 { margin-bottom: 1rem; }
-    form { margin-bottom: 1rem; }
-    input, button { padding: .5rem; }
-    pre { background: #fff; padding: 1rem; border: 1px solid #ddd; max-height: 60vh; overflow: auto; }
+    .audit-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    #output {
+      max-height: 60vh;
+      overflow: auto;
+      font-family: monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .hero.is-primary {
+      background: linear-gradient(135deg, #4a7bab, #2b4c6f);
+    }
   </style>
 </head>
 <body>
-  <h1>Audit Log Viewer</h1>
-  <form id="form">
-    <label>Limit (max 1000): <input type="number" id="limit" value="100" min="1" max="1000"/></label>
-    <button type="submit">Fetch</button>
-  </form>
-  <pre id="output"></pre>
+  <!-- Header -->
+  <section class="hero is-primary">
+    <div class="hero-body">
+      <div class="container">
+        <h1 class="title">
+          <i class="fas fa-list-ul mr-2"></i>Audit Log Viewer
+        </h1>
+        <p class="subtitle">Staff administrative panel</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="audit-container">
+      <!-- Control panel -->
+      <div class="box">
+        <form id="form">
+          <div class="field is-horizontal">
+            <div class="field-label is-normal">
+              <label class="label">Limit</label>
+            </div>
+            <div class="field-body">
+              <div class="field has-addons">
+                <div class="control is-expanded">
+                  <input class="input" type="number" id="limit" value="100" min="1" max="1000" placeholder="Max 1000">
+                </div>
+                <div class="control">
+                  <span class="button is-static">entries</span>
+                </div>
+              </div>
+              <div class="field">
+                <div class="control">
+                  <button type="submit" class="button is-primary">
+                    <span class="icon">
+                      <i class="fas fa-sync-alt"></i>
+                    </span>
+                    <span>Fetch Logs</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Status indicator -->
+      <div class="notification is-info is-light mb-4" id="status" style="display: none;">
+        <button class="delete" onclick="this.parentNode.style.display='none'"></button>
+        <span id="status-message">Loading audit logs...</span>
+      </div>
+
+      <!-- Results -->
+      <div class="card">
+        <header class="card-header">
+          <p class="card-header-title">
+            <i class="fas fa-clipboard-list mr-2"></i>Audit Log Results
+          </p>
+        </header>
+        <div class="card-content">
+          <div class="content">
+            <pre id="output" class="p-4 has-background-light">Fetch audit logs to view results...</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="content has-text-centered">
+      <p><strong>Audit Log Viewer</strong> • Administrative Access Only</p>
+    </div>
+  </footer>
+
   <script>
     (async function(){
-      const token = localStorage.getItem('token') || prompt('Enter JWT token');
+      const statusEl = document.getElementById('status');
+      const statusMessageEl = document.getElementById('status-message');
+      
+      // Check for token
+      const token = localStorage.getItem('jwtToken') || prompt('Enter JWT token');
+      if (!token) {
+        showStatus('No authentication token provided', 'is-danger');
+      }
+
+      // Form submission
       document.getElementById('form').onsubmit = async e => {
         e.preventDefault();
         const limit = document.getElementById('limit').value;
+        
+        // Show loading state
+        showStatus('Fetching audit logs...', 'is-info');
+        
         try {
           const res = await fetch(`/api/staff/audit-log?limit=${limit}`, {
             headers: { 'Authorization': 'Bearer ' + token }
           });
-          if (!res.ok) throw new Error(await res.text());
+          
+          if (!res.ok) {
+            const errorText = await res.text();
+            throw new Error(errorText || `HTTP error ${res.status}`);
+          }
+          
           const data = await res.json();
           document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+          showStatus(`Successfully loaded ${Object.keys(data).length > 0 ? data.length || 'all' : '0'} audit logs`, 'is-success');
+          
+          // Hide status after success
+          setTimeout(() => {
+            statusEl.style.display = 'none';
+          }, 3000);
+          
         } catch (err) {
           document.getElementById('output').textContent = 'Error: ' + err.message;
+          showStatus('Error fetching logs: ' + err.message, 'is-danger');
         }
       };
+      
+      // Helper to show status messages
+      function showStatus(message, type = 'is-info') {
+        statusEl.className = 'notification ' + type;
+        statusMessageEl.textContent = message;
+        statusEl.style.display = 'block';
+      }
     })();
   </script>
 </body>

@@ -2,38 +2,66 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Staff – Scan Folder Contents</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    body { font-family: Arial, sans-serif; padding: 2rem; background: #f9f9f9; }
-    h1 { margin-bottom: 1rem; }
-    form { margin-bottom: 1rem; }
-    input, button { padding: .5rem; }
-    pre { background: #fff; padding: 1rem; border: 1px solid #ddd; white-space: pre-wrap; }
+    .result-container {
+      max-height: 500px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
-  <h1>Scan Folder Contents</h1>
-  <form id="form">
-    <label>Folder ID: <input type="text" id="folderId" required /></label>
-    <button type="submit">Scan</button>
-  </form>
-  <pre id="output"></pre>
+  <section class="section">
+    <div class="container">
+      <h1 class="title is-3">Scan Folder Contents</h1>
+      
+      <div class="box">
+        <form id="form">
+          <div class="field has-addons">
+            <div class="control is-expanded">
+              <input class="input" type="text" id="folderId" placeholder="Enter Folder ID" required>
+            </div>
+            <div class="control">
+              <button type="submit" class="button is-primary">
+                <span class="icon">
+                  <i class="fas fa-search"></i>
+                </span>
+                <span>Scan</span>
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+      
+      <div class="notification is-light result-container">
+        <pre id="output" class="has-background-white-ter p-4 is-family-monospace"></pre>
+      </div>
+    </div>
+  </section>
+
   <script>
     (async function(){
-      const token = localStorage.getItem('token') || prompt('Enter JWT token');
+      const token = localStorage.getItem('jwtToken') || prompt('Enter JWT token');
       document.getElementById('form').onsubmit = async e => {
         e.preventDefault();
         const folderId = document.getElementById('folderId').value.trim();
+        const output = document.getElementById('output');
+        
+        output.textContent = 'Loading...';
+        
         try {
           const res = await fetch(`/api/staff/folder-contents?folderId=${folderId}`, {
             headers: { 'Authorization': 'Bearer ' + token }
           });
           if (!res.ok) throw new Error(await res.text());
           const data = await res.json();
-          document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+          output.textContent = JSON.stringify(data, null, 2);
         } catch (err) {
-          document.getElementById('output').textContent = 'Error: ' + err.message;
+          output.textContent = 'Error: ' + err.message;
+          output.classList.add('has-text-danger');
         }
       };
     })();

@@ -1,44 +1,193 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Staff – Flag Folder</title>
+  <!-- Bulma CSS Framework -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
-    body { font-family: Arial, sans-serif; padding: 2rem; background: #f9f9f9; }
-    h1 { margin-bottom: 1rem; }
-    form { margin-bottom: 1rem; }
-    input, button { padding: .5rem; }
-    #result { margin-top: 1rem; }
+    .page-container {
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    .hero.is-warning {
+      background: linear-gradient(135deg, #ffdd57, #ffb400);
+    }
+    .form-card {
+      border-radius: 8px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+    }
+    #result {
+      display: none;
+      transition: all 0.3s ease;
+    }
+    .notification {
+      border-radius: 6px;
+    }
+    .info-box {
+      background-color: #f6f9fe;
+      border-left: 4px solid #3273dc;
+    }
   </style>
 </head>
 <body>
-  <h1>Flag Folder</h1>
-  <form id="form">
-    <label>Folder ID: <input type="text" id="folderId" required /></label>
-    <button type="submit">Flag</button>
-  </form>
-  <div id="result"></div>
+  <!-- Header -->
+  <section class="hero is-warning">
+    <div class="hero-body">
+      <div class="container">
+        <h1 class="title">
+          <i class="fas fa-flag mr-2"></i>Flag Folder
+        </h1>
+        <p class="subtitle">Staff moderation tool</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="page-container">
+      <!-- Info box explaining flagging -->
+      <div class="box info-box mb-5">
+        <div class="columns is-vcentered">
+          <div class="column is-narrow">
+            <span class="icon is-medium has-text-info">
+              <i class="fas fa-info-circle fa-lg"></i>
+            </span>
+          </div>
+          <div class="column">
+            <p>Flagging a folder marks it for further review by the moderation team. Use this tool when content requires attention but doesn't need immediate removal.</p>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Form Card -->
+      <div class="box form-card">
+        <form id="form">
+          <div class="field">
+            <label class="label">Folder ID</label>
+            <div class="control has-icons-left">
+              <input class="input" type="text" id="folderId" required placeholder="Enter the folder identifier">
+              <span class="icon is-small is-left">
+                <i class="fas fa-folder"></i>
+              </span>
+            </div>
+            <p class="help">Enter the unique ID of the folder you want to flag</p>
+          </div>
+
+          <div class="field">
+            <div class="control">
+              <button type="submit" class="button is-warning is-fullwidth">
+                <span class="icon">
+                  <i class="fas fa-flag"></i>
+                </span>
+                <span>Flag Folder</span>
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Result Notification -->
+      <div id="result" class="notification mt-4">
+        <button class="delete" onclick="document.getElementById('result').style.display='none'"></button>
+        <div id="resultMessage"></div>
+      </div>
+
+      <!-- Loading indicator -->
+      <div id="loadingIndicator" class="has-text-centered mt-4" style="display: none;">
+        <progress class="progress is-warning" max="100"></progress>
+        <p class="has-text-grey">Processing request...</p>
+      </div>
+      
+      <!-- Recent actions (optional component) -->
+      <div class="box mt-5">
+        <h3 class="title is-5">
+          <i class="fas fa-history mr-2"></i>Recent Actions
+        </h3>
+        <div class="content">
+          <p class="has-text-grey-light has-text-centered">No recent flagging actions to display</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="content has-text-centered">
+      <p class="has-text-grey is-size-7">
+        <strong>Moderation Tools</strong> • Staff Access Only
+      </p>
+    </div>
+  </footer>
+
   <script>
     (async function(){
-      const token = localStorage.getItem('token') || prompt('Enter JWT token');
-      document.getElementById('form').onsubmit = async e => {
+      // Get or request authentication token
+      const token = localStorage.getItem('jwtToken') || prompt('Enter JWT token');
+      
+      // DOM elements
+      const form = document.getElementById('form');
+      const resultDiv = document.getElementById('result');
+      const resultMessage = document.getElementById('resultMessage');
+      const loadingIndicator = document.getElementById('loadingIndicator');
+      
+      // Form submission handler
+      form.onsubmit = async e => {
         e.preventDefault();
+        
+        // Get folder ID
         const folderId = document.getElementById('folderId').value.trim();
+        
+        if (!folderId) {
+          showResult('Please enter a folder ID', 'is-danger');
+          return;
+        }
+        
+        // Show loading indicator
+        loadingIndicator.style.display = 'block';
+        resultDiv.style.display = 'none';
+        
         try {
+          // Make API request
           const res = await fetch(`/api/staff/flag-folder/${folderId}`, {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + token }
           });
+          
+          // Parse response
           const data = await res.json();
-          if (!res.ok) throw new Error(data.error || data.message || res.statusText);
-          document.getElementById('result').textContent = data.message;
+          
+          // Handle errors
+          if (!res.ok) {
+            throw new Error(data.error || data.message || res.statusText);
+          }
+          
+          // Show success message
+          showResult(`<strong>Success!</strong> ${data.message || 'Folder has been flagged.'}`, 'is-success');
+          
+          // Clear the form
+          document.getElementById('folderId').value = '';
+          
         } catch (err) {
-          document.getElementById('result').textContent = 'Error: ' + err.message;
+          // Show error message
+          showResult(`<strong>Error:</strong> ${err.message}`, 'is-danger');
+        } finally {
+          // Hide loading indicator
+          loadingIndicator.style.display = 'none';
         }
       };
+      
+      // Helper function to show results
+      function showResult(message, type = 'is-info') {
+        resultMessage.innerHTML = message;
+        resultDiv.className = `notification ${type}`;
+        resultDiv.style.display = 'block';
+        
+        // Scroll to result if needed
+        resultDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     })();
   </script>
 </body>
 </html>
-<p><strong>2025-05-04 07:35:37</strong>: <code>HQ</code> in <em>index.js - Secure File Sharing - Visual Studio Code</em></p>
