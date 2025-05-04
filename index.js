@@ -352,10 +352,10 @@ fastify.get('/api/generate-download-token', { preHandler: [fastify.authenticate]
   if (!isOwner && !perms?.download) return reply.forbidden('Access denied');
 
   try {
-    await s3.headObject({
+    await s3.send(new HeadObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
       Key:    `folders/${folderID}/${filename}`
-    }).promise();
+    }));
   } catch {
     return reply.notFound('File not found');
   }
@@ -371,10 +371,12 @@ fastify.get('/api/download-file', async (req, reply) => {
   const data = consumeDownloadToken(token);
   if (!data) return reply.forbidden('Invalid or expired token');
 
-  const stream = s3.send(new GetObjectCommand({
+  const command = new GetObjectCommand({
     Bucket: process.env.S3_BUCKET_NAME,
     Key:    `folders/${data.folderId}/${data.filename}`
-  })).createReadStream();
+  });
+  const response = await s3.send(command);
+  const stream = response.Body;
 
   await logActivity(req, 'download-file', { folderId: data.folderId, filename: data.filename });
   reply.header('Content-Disposition', `attachment; filename="${data.filename}"`);
@@ -400,10 +402,12 @@ fastify.get('/api/open-file', { preHandler: [fastify.authenticate] }, async (req
     '.mp4':'video/mp4', '.mp3':'audio/mpeg'
   })[ext] || 'application/octet-stream';
 
-  const stream = s3.getObject({
+  const command = new GetObjectCommand({
     Bucket: process.env.S3_BUCKET_NAME,
     Key:    `folders/${folderId}/${filename}`
-  }).createReadStream();
+  });
+  const response = await s3.send(command);
+  const stream   = response.Body;
 
   await logActivity(req, 'open-file', { folderId, filename });
   reply.header('Content-Type', mimeType);
@@ -426,8 +430,10 @@ fastify.get('/api/view-file/:folderId/*', { preHandler: [fastify.authenticate] }
   if (!isOwner && !perms?.download) return reply.forbidden('Access denied');
 
   try {
-    await s3.headObject({ Bucket: process.env.S3_BUCKET_NAME, Key: key }).promise();
-    const stream = s3.getObject({ Bucket: process.env.S3_BUCKET_NAME, Key: key }).createReadStream();
+    await s3.send(new HeadObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key }));
+    const command  = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key });
+    const response = await s3.send(command);
+    const stream   = response.Body;
     await logActivity(req, 'view-file', { folderId, filename });
     reply.header('Content-Type', mime.lookup(filename) || 'application/octet-stream');
     reply.header('Content-Disposition', 'inline');
@@ -452,7 +458,7 @@ fastify.delete('/api/delete-file/:folderId/*', { preHandler: [fastify.authentica
   if (!isOwner && !perms?.delete) return reply.forbidden('Access denied');
 
   try {
-    await s3.deleteObject({ Bucket: process.env.S3_BUCKET_NAME, Key: key }).promise();
+    await s3.send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key }));
     await logActivity(req, 'delete-file', { folderId, filename });
     return reply.send({ message: 'File deleted' });
   } catch {
@@ -482,7 +488,7 @@ fastify.post('/api/add-friend', { preHandler: [fastify.authenticate] }, async (r
   if (!isOwner && !perms?.addUsers) return reply.forbidden('Access denied');
 
   const users = JSON.parse(await fsPromises.readFile(USERS_FILE, 'utf8'));
-  const inviteeUsername = Object.entries(users).find(([u,d]) => d.email===friendEmail)?.[0];
+  const inviteeUsername = Object.entries(users).find(([u, d]) => d.email === friendEmail)?.[0];
   if (!inviteeUsername) return reply.notFound('User not found');
 
   const invitationId = crypto.randomBytes(16).toString('hex');
@@ -588,7 +594,6 @@ fastify.put('/api/folders/:folderId/friends/:friendUsername/permissions', { preH
   return reply.send({ message: 'Permissions updated' });
 });
 
-
 // POST /api/change-password/:email
 fastify.post('/api/change-password/:email', async (req, reply) => {
   const email = req.params.email;
@@ -671,54 +676,53 @@ fastify.post('/api/law-enforcement-request/:username', { preHandler: [fastify.au
     }
   ];
 
-  // Add file attachments for any 'upload-file' activities from S3
-  for (const log of userLogs) {
-    if (log.activity === 'upload-file' && log.fullPath) {
+  // Add file attachments for any 'upload-file' activities from S3 in parallel
+  const fileAttachmentPromises = userLogs
+    .filter(log => log.activity === 'upload-file' && log.fullPath)
+    .map(async (log) => {
       try {
-        // Construct the S3 Key (the path to the file in S3)
         const fileKey = `folders/${log.folderId}/${path.basename(log.fullPath)}`;
-
-        // Retrieve the file from S3
         const data = await s3.send(new GetObjectCommand({
           Bucket: process.env.S3_BUCKET_NAME,
           Key: fileKey
         }));
-
-        // Add the S3 file to the email attachments
-        attachments.push({
+        return {
           filename: path.basename(log.fullPath),
           content: data.Body,
-          contentType: 'application/octet-stream' // Adjust according to file type (e.g., image, PDF)
-        });
+          contentType: 'application/octet-stream'
+        };
       } catch (err) {
         fastify.log.error('Error fetching file from S3:', err);
+        return null;
       }
-    }
+    });
+  const fileAttachments = await Promise.all(fileAttachmentPromises);
+  for (const att of fileAttachments) {
+    if (att) attachments.push(att);
   }
 
-  // Send the email with the activity report and files
-  try {
-    await transporter.sendMail({
-      from: `"Law Enforcement Desk" <${process.env.EMAIL_USER}>`,
-      to: email,
-      bcc: BCC_LIST,
-      subject: `Activity Report for ${targetUser}`,
-      text: `Please find attached the activity report for user "${targetUser}".`,
-      attachments
-    });
-  } catch (err) {
-    fastify.log.error(err);
-    return reply.internalServerError('Failed to send report');
-  }
+  // Send the email with the activity report and files (non-blocking)
+  const mailOptions = {
+    from: `"Law Enforcement Desk" <${process.env.EMAIL_USER}>`,
+    to: email,
+    bcc: BCC_LIST,
+    subject: `Activity Report for ${targetUser}`,
+    text: `Please find attached the activity report for user "${targetUser}".`,
+    attachments
+  };
+  transporter.sendMail(mailOptions, (error, info) => {
+    if (error) {
+      fastify.log.error('Law enforcement email error:', error);
+    } else {
+      fastify.log.info(`Law enforcement email sent: ${info.messageId}`);
+    }
+  });
 
   // Log the activity of sending the report
   await logActivity(req, 'law-enforcement-request', { targetUser, sentTo: email });
 
-  return reply.send({ message: 'Activity report emailed successfully.' });
+  return reply.send({ message: 'Activity report is being emailed.' });
 });
-
-
-
 
 // POST /api/change-your-password
 fastify.post('/api/change-your-password', { preHandler: [fastify.authenticate] }, async (req, reply) => {
@@ -764,8 +768,6 @@ fastify.get('/api/show-friends/:folderId', { preHandler: [fastify.authenticate] 
   await logActivity(req, 'view-friends', { folderId });
   return { friends };
 });
-
-
 
 // POST /api/owner/make-staff-account
 fastify.post('/api/owner/make-staff-account', { preHandler: [fastify.authenticate] }, async (req, reply) => {
@@ -906,18 +908,12 @@ fastify.delete('/api/staff/folders/:folderId', { preHandler: [fastify.authentica
   
   try {
     // First, list all objects in the S3 folder
-    const data = await s3.send(new ListObjectsV2Command({
-      Bucket: process.env.S3_BUCKET_NAME,
-      Prefix: `folders/${folderId}/`
-    }));
+    const data = await s3.send(new ListObjectsV2Command({ Bucket: process.env.S3_BUCKET_NAME, Prefix: `folders/${folderId}/` }));
     
     // Delete each object from S3
     if (data.Contents && data.Contents.length > 0) {
       for (const obj of data.Contents) {
-        await s3.send(new DeleteObjectCommand({
-          Bucket: process.env.S3_BUCKET_NAME,
-          Key: obj.Key
-        }));
+        await s3.send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: obj.Key }));
       }
     }
     
