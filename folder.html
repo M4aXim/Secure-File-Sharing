@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -656,7 +655,26 @@
 
     closePermissionModalButtons.forEach(btn => btn.addEventListener('click', closePermissionModal));
     document.getElementById('changePermissionButton').addEventListener('click', openPermissionModal);
-    savePermissionsButton.addEventListener('click', savePermissions);
+
+    // Check ownership to hide Change Permission button
+    async function checkOwnership() {
+      const token = localStorage.getItem('jwtToken');
+      if (!token) return;
+      try {
+        const res = await fetch(`http://localhost:3000/api/am-I-owner-of-folder/${folderId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Not authorized');
+        const { isOwner } = await res.json();
+        if (!isOwner) {
+          const btn = document.getElementById('changePermissionButton');
+          if (btn) btn.style.display = 'none';
+        }
+      } catch (err) {
+        console.error('Ownership check failed', err);
+      }
+    }
+    checkOwnership();
 
     // Initial load
     fetchFolderContents();

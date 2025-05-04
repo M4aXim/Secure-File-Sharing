@@ -987,6 +987,19 @@ fastify.get('/api/check-role', { preHandler: [fastify.authenticate] }, async (re
   return { role: req.user.role };
 });
 
+fastify.get('/api/am-I-owner-of-folder/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { folderId } = req.params;
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder = folders.find(f => f.folderId === folderId);
+  
+  if (!folder) return reply.notFound('Folder not found');
+  
+  const isOwner = folder.owner === req.user.username;
+  const hasAddUsersPermission = folder.friendPermissions?.[req.user.username]?.addUsers === true;
+  
+  return { isOwner: isOwner || hasAddUsersPermission };
+});
+
 // SPA fallback
 fastify.setNotFoundHandler((req, reply) => {
   if (req.raw.url.startsWith('/api/')) {
