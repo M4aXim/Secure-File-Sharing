@@ -575,19 +575,20 @@ fastify.put('/api/folders/:folderId/friends/:friendUsername/permissions', { preH
   if (folder.owner !== req.user.username) return reply.forbidden('Only owner can set permissions');
 
   folder.friendPermissions = folder.friendPermissions || {};
-  if (!folder.friendPermissions[friendUsername]) {
-    return reply.notFound('Friend not found');
-  }
+  folder.friendPermissions[friendUsername] = folder.friendPermissions[friendUsername] || {};
+
   folder.friendPermissions[friendUsername] = {
-    download: download !== undefined ? download : folder.friendPermissions[friendUsername].download,
-    upload:   upload   !== undefined ? upload   : folder.friendPermissions[friendUsername].upload,
-    delete:   deletePerm!== undefined ? deletePerm: folder.friendPermissions[friendUsername].delete,
-    addUsers: addUsers  !== undefined ? addUsers  : folder.friendPermissions[friendUsername].addUsers
+    download: download !== undefined ? download : folder.friendPermissions[friendUsername].download || false,
+    upload:   upload   !== undefined ? upload   : folder.friendPermissions[friendUsername].upload || false,
+    delete:   deletePerm!== undefined ? deletePerm: folder.friendPermissions[friendUsername].delete || false,
+    addUsers: addUsers  !== undefined ? addUsers  : folder.friendPermissions[friendUsername].addUsers || false
   };
+
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
   await logActivity(req, 'update-friend-permissions', { folderId, friendUsername });
   return reply.send({ message: 'Permissions updated' });
 });
+
 
 // POST /api/change-password/:email
 fastify.post('/api/change-password/:email', async (req, reply) => {
@@ -838,17 +839,31 @@ fastify.post('/api/staff/flag-folder/:folderId', { preHandler: [fastify.authenti
   if (!folder) return reply.notFound('Folder not found');
   folder.flagged = true;
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+  
   try {
+    // Email to admin
     await transporter.sendMail({
       from: `"File Sharing" <${process.env.EMAIL_USER}>`,
       to: process.env.EMAIL_USER,
       subject: 'Folder Flagged for Policy Violation',
-      text: `Folder ID: ${folderId}\nName: ${folder.folderName}\nOwner: ${folder.owner}`
+      text: `Folder ID: ${folderId}\nName: ${folder.folderName}\nOwner: ${folder.owner}\nFlagged by: ${req.user.username}`
     });
+
+    // Email to folder owner
+    const owner = await usersColl.findOne({ username: folder.owner });
+    if (owner) {
+      await transporter.sendMail({
+        from: `"File Sharing" <${process.env.EMAIL_USER}>`,
+        to: owner.email,
+        subject: 'Your Folder Has Been Flagged',
+        text: `Your folder "${folder.folderName}" (ID: ${folderId}) has been flagged by a staff member for policy violation.\nPlease review the folder contents and ensure compliance with our policies.`
+      });
+    }
   } catch (err) {
     fastify.log.error('Flag email error:', err);
   }
-  await logActivity(req, 'staff-flag-folder', { folderId });
+
+  await logActivity(req, 'staff-flag-folder', { folderId, staffMember: req.user.username });
   return reply.send({ message: 'Folder flagged' });
 });
 
