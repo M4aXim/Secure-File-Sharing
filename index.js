@@ -1,5 +1,10 @@
 require('dotenv').config();
 
+// AWS S3 Setup
+const AWS = require('aws-sdk');
+AWS.config.update({ region: process.env.AWS_REGION });
+const s3 = new AWS.S3();
+
 // Load owner username from .env
 const OWNER_USERNAME = process.env.OWNER_USERNAME;
 if (!OWNER_USERNAME) {
@@ -9,7 +14,6 @@ if (!OWNER_USERNAME) {
 
 const path               = require('path');
 const fsPromises         = require('fs').promises;
-const { createReadStream } = require('fs');
 const crypto             = require('crypto');
 const bcrypt             = require('bcrypt');
 const fastifyLib         = require('fastify');
@@ -269,8 +273,13 @@ fastify.post('/api/create-folder', { preHandler: [fastify.authenticate] }, async
   }
 
   const folderId = crypto.randomBytes(16).toString('hex');
-  await fsPromises.mkdir(path.join(FOLDERS_DIR, folderId), { recursive: true });
-  folders.push({ folderName, folderId, owner: req.user.username, createdAt: new Date().toISOString() });
+  folders.push({
+    folderName,
+    folderId,
+    owner: req.user.username,
+    createdAt: new Date().toISOString(),
+    friendPermissions: {}
+  });
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
 
   await logActivity(req, 'create-folder', { folderName, folderId });
@@ -286,48 +295,47 @@ fastify.get('/api/folder-contents', { preHandler: [fastify.authenticate] }, asyn
   const meta    = folders.find(f => f.folderId === folderId);
   if (!meta) return reply.notFound('Folder not found');
 
-  const isOwner  = meta.owner === req.user.username;
-  const isFriend = Array.isArray(meta.friends) && meta.friends.includes(req.user.username);
-  if (!isOwner && !isFriend) return reply.forbidden('Access denied');
+  const isOwner     = meta.owner === req.user.username;
+  const perms       = (meta.friendPermissions || {})[req.user.username];
+  if (!isOwner && !perms) return reply.forbidden('Access denied');
 
-  const folderPath = path.join(FOLDERS_DIR, folderId);
-  const files      = await fsPromises.readdir(folderPath);
-  const list       = await Promise.all(files.map(async file => {
-    const stats = await fsPromises.stat(path.join(folderPath, file));
-    return {
-      filename: file,
-      size:     stats.size,
-      created:  stats.birthtime,
-      modified: stats.mtime,
-      type:     path.extname(file)
-    };
+  const data = await s3.listObjectsV2({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Prefix: `folders/${folderId}/`
+  }).promise();
+
+  return (data.Contents||[]).map(obj => ({
+    filename:     obj.Key.slice(`folders/${folderId}/`.length),
+    size:         obj.Size,
+    lastModified: obj.LastModified,
+    type:         path.extname(obj.Key)
   }));
-
-  return list;
 });
 
 // POST /api/upload-file/:folderId
 fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { folderId } = req.params;
   const upload = await req.file();
-  if (!upload) return reply.badRequest('No file uploaded');
+  if (!upload)              return reply.badRequest('No file uploaded');
   if (upload.file.truncated) return reply.entityTooLarge('File too large');
 
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
   const meta    = folders.find(f => f.folderId === folderId);
   if (!meta) return reply.notFound('Folder not found');
-  if (meta.owner !== req.user.username) return reply.forbidden('Access denied');
+
+  const isOwner = meta.owner === req.user.username;
+  const perms   = (meta.friendPermissions||{})[req.user.username];
+  if (!isOwner && !perms?.upload) return reply.forbidden('Access denied');
 
   const filename = `${Date.now()}-${upload.filename}`;
-  const filePath = path.join(FOLDERS_DIR, folderId, filename);
-  await fsPromises.mkdir(path.dirname(filePath), { recursive: true });
+  await s3.upload({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key:    `folders/${folderId}/${filename}`,
+    Body:   upload.file,
+    ContentType: upload.mimetype || mime.lookup(filename) || 'application/octet-stream'
+  }).promise();
 
-  await new Promise((resolve, reject) => {
-    const ws = require('fs').createWriteStream(filePath);
-    upload.file.pipe(ws).on('finish', resolve).on('error', reject);
-  });
-
-  await logActivity(req, 'upload-file', { folderId, filename, fullPath: filePath });
+  await logActivity(req, 'upload-file', { folderId, filename });
   return { message: 'File uploaded', filename };
 });
 
@@ -340,22 +348,20 @@ fastify.get('/api/generate-download-token', { preHandler: [fastify.authenticate]
   const meta    = folders.find(f => f.folderId === folderID);
   if (!meta) return reply.notFound('Folder not found');
 
-  const isOwner  = meta.owner === req.user.username;
-  const isFriend = Array.isArray(meta.friends) && meta.friends.includes(req.user.username);
-  if (!isOwner && !isFriend) return reply.forbidden('Access denied');
-
-  const folderPath = path.join(FOLDERS_DIR, folderID);
-  const filePath   = path.join(folderPath, filename);
-  if (!filePath.startsWith(folderPath)) return reply.forbidden();
+  const isOwner = meta.owner === req.user.username;
+  const perms   = (meta.friendPermissions||{})[req.user.username];
+  if (!isOwner && !perms?.download) return reply.forbidden('Access denied');
 
   try {
-    await fsPromises.access(filePath);
+    await s3.headObject({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key:    `folders/${folderID}/${filename}`
+    }).promise();
   } catch {
     return reply.notFound('File not found');
   }
 
-  const token = makeDownloadToken(folderID, filename);
-  return { token };
+  return { token: makeDownloadToken(folderID, filename) };
 });
 
 // GET /api/download-file
@@ -366,16 +372,14 @@ fastify.get('/api/download-file', async (req, reply) => {
   const data = consumeDownloadToken(token);
   if (!data) return reply.forbidden('Invalid or expired token');
 
-  const filePath = path.join(FOLDERS_DIR, data.folderId, data.filename);
-  try {
-    await fsPromises.access(filePath);
-  } catch {
-    return reply.notFound('File not found');
-  }
+  const stream = s3.getObject({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key:    `folders/${data.folderId}/${data.filename}`
+  }).createReadStream();
 
   await logActivity(req, 'download-file', { folderId: data.folderId, filename: data.filename });
   reply.header('Content-Disposition', `attachment; filename="${data.filename}"`);
-  return reply.send(createReadStream(filePath));
+  return reply.send(stream);
 });
 
 // GET /api/open-file
@@ -388,46 +392,48 @@ fastify.get('/api/open-file', { preHandler: [fastify.authenticate] }, async (req
   if (!meta) return reply.notFound('Folder not found');
   if (meta.owner !== req.user.username) return reply.forbidden('Access denied');
 
-  const filePath = path.join(FOLDERS_DIR, folderId, filename);
-  try {
-    await fsPromises.access(filePath);
-  } catch {
-    return reply.notFound('File not found');
-  }
-
-  const ext = path.extname(filename).toLowerCase();
+  const ext      = path.extname(filename).toLowerCase();
   const mimeType = ({
-    '.txt':  'text/plain',
-    '.pdf':  'application/pdf',
-    '.doc':  'application/msword',
-    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    '.jpg':  'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png':  'image/png',
-    '.gif':  'image/gif',
-    '.mp4':  'video/mp4'
+    '.txt': 'text/plain', '.pdf': 'application/pdf',
+    '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.jpg': 'image/jpeg', '.jpeg':'image/jpeg',
+    '.png':'image/png', '.gif':'image/gif',
+    '.mp4':'video/mp4', '.mp3':'audio/mpeg'
   })[ext] || 'application/octet-stream';
+
+  const stream = s3.getObject({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key:    `folders/${folderId}/${filename}`
+  }).createReadStream();
 
   await logActivity(req, 'open-file', { folderId, filename });
   reply.header('Content-Type', mimeType);
   reply.header('Content-Disposition', `inline; filename="${filename}"`);
-  return reply.send(createReadStream(filePath));
+  return reply.send(stream);
 });
 
 // GET /api/view-file/:folderId/*
 fastify.get('/api/view-file/:folderId/*', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { folderId } = req.params;
   const filename     = req.params['*'];
-  const filePath     = path.join(FOLDERS_DIR, folderId, filename);
+  const key          = `folders/${folderId}/${filename}`;
+
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const meta    = folders.find(f => f.folderId === folderId);
+  if (!meta) return reply.notFound('Folder not found');
+
+  const isOwner = meta.owner === req.user.username;
+  const perms   = (meta.friendPermissions||{})[req.user.username];
+  if (!isOwner && !perms?.download) return reply.forbidden('Access denied');
 
   try {
-    await fsPromises.access(filePath);
-    const contentType = mime.lookup(filename) || 'application/octet-stream';
-    reply.header('Content-Type', contentType);
+    await s3.headObject({ Bucket: process.env.S3_BUCKET_NAME, Key: key }).promise();
+    const stream = s3.getObject({ Bucket: process.env.S3_BUCKET_NAME, Key: key }).createReadStream();
+    await logActivity(req, 'view-file', { folderId, filename });
+    reply.header('Content-Type', mime.lookup(filename) || 'application/octet-stream');
     reply.header('Content-Disposition', 'inline');
-    return reply.send(createReadStream(filePath));
-  } catch (err) {
-    fastify.log.error(`Failed to open file: ${filePath}`, err);
+    return reply.send(stream);
+  } catch {
     return reply.notFound('File not found or access denied');
   }
 });
@@ -436,40 +442,48 @@ fastify.get('/api/view-file/:folderId/*', { preHandler: [fastify.authenticate] }
 fastify.delete('/api/delete-file/:folderId/*', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { folderId } = req.params;
   const filename     = req.params['*'];
-  const filePath     = path.join(FOLDERS_DIR, folderId, filename);
+  const key          = `folders/${folderId}/${filename}`;
+
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const meta    = folders.find(f => f.folderId === folderId);
+  if (!meta) return reply.notFound('Folder not found');
+
+  const isOwner = meta.owner === req.user.username;
+  const perms   = (meta.friendPermissions||{})[req.user.username];
+  if (!isOwner && !perms?.delete) return reply.forbidden('Access denied');
 
   try {
-    await fsPromises.access(filePath);
-    await fsPromises.unlink(filePath);
+    await s3.deleteObject({ Bucket: process.env.S3_BUCKET_NAME, Key: key }).promise();
     await logActivity(req, 'delete-file', { folderId, filename });
     return reply.send({ message: 'File deleted' });
-  } catch (err) {
-    fastify.log.error(`Delete error: ${err.message}`);
+  } catch {
     return reply.notFound('File not found');
   }
 });
 
 // GET /api/shared-folders
 fastify.get('/api/shared-folders', { preHandler: [fastify.authenticate] }, async (req) => {
-  const folders       = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const sharedFolders = folders.filter(f => Array.isArray(f.friends) && f.friends.includes(req.user.username));
-  return sharedFolders.map(f => ({ folderId: f.folderId, folderName: f.folderName }));
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  return folders.filter(f =>
+    f.friendPermissions && f.friendPermissions[req.user.username]
+  ).map(f => ({ folderId: f.folderId, folderName: f.folderName }));
 });
 
 // POST /api/add-friend
 fastify.post('/api/add-friend', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { friendEmail, folderId } = req.body;
-  if (!friendEmail || !folderId) {
-    return reply.badRequest('Missing email or folder ID');
-  }
+  if (!friendEmail || !folderId) return reply.badRequest('Missing email or folder ID');
 
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
   const folder  = folders.find(f => f.folderId === folderId);
   if (!folder) return reply.notFound('Folder not found');
-  if (folder.owner !== req.user.username) return reply.forbidden('Access denied');
 
-  const users  = JSON.parse(await fsPromises.readFile(USERS_FILE, 'utf8'));
-  const inviteeUsername = Object.entries(users).find(([u, data]) => data.email === friendEmail)?.[0];
+  const isOwner = folder.owner === req.user.username;
+  const perms   = folder.friendPermissions?.[req.user.username];
+  if (!isOwner && !perms?.addUsers) return reply.forbidden('Access denied');
+
+  const users = JSON.parse(await fsPromises.readFile(USERS_FILE, 'utf8'));
+  const inviteeUsername = Object.entries(users).find(([u,d]) => d.email===friendEmail)?.[0];
   if (!inviteeUsername) return reply.notFound('User not found');
 
   const invitationId = crypto.randomBytes(16).toString('hex');
@@ -482,13 +496,7 @@ fastify.post('/api/add-friend', { preHandler: [fastify.authenticate] }, async (r
       from: `"File Sharing" <${process.env.EMAIL_USER}>`,
       to: friendEmail,
       subject: `Folder Invitation from ${req.user.username}`,
-      text: `Hello,
-
-${req.user.username} has invited you to join and edit the folder "${folder.folderName}".
-
-Accept: http://localhost:${PORT}/api/accept-invitation/${invitationId}
-Deny:   http://localhost:${PORT}/api/deny-invitation/${invitationId}
-`
+      text: `Hello,\n\n${req.user.username} has invited you to the folder "${folder.folderName}".\n\nAccept: http://localhost:${PORT}/api/accept-invitation/${invitationId}\nDeny: http://localhost:${PORT}/api/deny-invitation/${invitationId}\n`
     });
     await logActivity(req, 'send-invitation', { invitationId, folderId, toEmail: friendEmail });
     return reply.send({ message: 'Invitation sent successfully' });
@@ -510,9 +518,14 @@ fastify.get('/api/accept-invitation/:invitationId', async (req, reply) => {
   const invitedUsername = folder.invitedUsername;
   if (!invitedUsername) return reply.badRequest('Invalid invitation data');
 
-  folder.friends = Array.isArray(folder.friends) ? folder.friends : [];
-  if (!folder.friends.includes(invitedUsername)) {
-    folder.friends.push(invitedUsername);
+  folder.friendPermissions = folder.friendPermissions || {};
+  if (!folder.friendPermissions[invitedUsername]) {
+    folder.friendPermissions[invitedUsername] = {
+      download: true,
+      upload:   true,
+      delete:   true,
+      addUsers: false
+    };
   }
   folder.invitationId   = null;
   folder.invitedUsername = null;
@@ -535,6 +548,45 @@ fastify.get('/api/deny-invitation/:invitationId', async (req, reply) => {
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
   await logActivity(req, 'deny-invitation', { invitationId, folderId: folder.folderId });
   return reply.send({ message: 'Invitation denied' });
+});
+
+// GET /api/folders/:folderId/friends/permissions
+fastify.get('/api/folders/:folderId/friends/permissions', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { folderId } = req.params;
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder  = folders.find(f => f.folderId === folderId);
+  if (!folder) return reply.notFound('Folder not found');
+  if (folder.owner !== req.user.username) return reply.forbidden('Only owner can view permissions');
+
+  const friends = Object.entries(folder.friendPermissions || {}).map(([username, perms]) => ({
+    username,
+    permissions: perms
+  }));
+  return { friends };
+});
+
+// PUT /api/folders/:folderId/friends/:friendUsername/permissions
+fastify.put('/api/folders/:folderId/friends/:friendUsername/permissions', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { folderId, friendUsername } = req.params;
+  const { download, upload, delete: deletePerm, addUsers } = req.body;
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder  = folders.find(f => f.folderId === folderId);
+  if (!folder) return reply.notFound('Folder not found');
+  if (folder.owner !== req.user.username) return reply.forbidden('Only owner can set permissions');
+
+  folder.friendPermissions = folder.friendPermissions || {};
+  if (!folder.friendPermissions[friendUsername]) {
+    return reply.notFound('Friend not found');
+  }
+  folder.friendPermissions[friendUsername] = {
+    download: download !== undefined ? download : folder.friendPermissions[friendUsername].download,
+    upload:   upload   !== undefined ? upload   : folder.friendPermissions[friendUsername].upload,
+    delete:   deletePerm!== undefined ? deletePerm: folder.friendPermissions[friendUsername].delete,
+    addUsers: addUsers  !== undefined ? addUsers  : folder.friendPermissions[friendUsername].addUsers
+  };
+  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+  await logActivity(req, 'update-friend-permissions', { folderId, friendUsername });
+  return reply.send({ message: 'Permissions updated' });
 });
 
 // POST /api/change-password/:email
@@ -617,7 +669,7 @@ fastify.post('/api/law-enforcement-request/:username', { preHandler: [fastify.au
       try {
         await fsPromises.access(log.fullPath);
         attachments.push({ filename: path.basename(log.fullPath), path: log.fullPath });
-      } catch { /* skip missing files */ }
+      } catch {}
     }
   }
 
@@ -638,43 +690,52 @@ fastify.post('/api/law-enforcement-request/:username', { preHandler: [fastify.au
   await logActivity(req, 'law-enforcement-request', { targetUser, sentTo: email });
   return reply.send({ message: 'Activity report emailed successfully.' });
 });
+
+// POST /api/change-your-password
 fastify.post('/api/change-your-password', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { oldPassword, newPassword } = req.body;
-  if (!oldPassword || !newPassword) {
-    return reply.badRequest('Missing old or new password');
-  }
-  if (newPassword.length < 8) {
-    return reply.badRequest('New password too short');
-  }
-  if (newPassword === oldPassword) {
-    return reply.badRequest('New password cannot be the same as old password');
-  }
+  if (!oldPassword || !newPassword) return reply.badRequest('Missing old or new password');
+  if (newPassword.length < 8)                return reply.badRequest('New password too short');
+  if (newPassword === oldPassword)           return reply.badRequest('New password cannot be the same as old password');
 
   try {
     const user = await usersColl.findOne({ username: req.user.username });
-    if (!user) {
-      return reply.notFound('User not found');
-    }
+    if (!user) return reply.notFound('User not found');
 
-    const validPassword = await bcrypt.compare(oldPassword, user.password);
-    if (!validPassword) {
-      return reply.unauthorized('Invalid old password');
-    }
+    const valid = await bcrypt.compare(oldPassword, user.password);
+    if (!valid) return reply.unauthorized('Invalid old password');
 
     const hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
-    await usersColl.updateOne(
-      { username: req.user.username },
-      { $set: { password: hash }}
-    );
-
+    await usersColl.updateOne({ username: req.user.username }, { $set: { password: hash } });
     await logActivity(req, 'change-password', { username: req.user.username });
     return reply.send({ message: 'Password changed successfully' });
-
   } catch (err) {
     fastify.log.error(err);
     return reply.internalServerError('Error changing password');
   }
 });
+
+// GET /api/show-friends/:folderId
+fastify.get('/api/show-friends/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { folderId } = req.params;
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder  = folders.find(f => f.folderId === folderId);
+  if (!folder) return reply.notFound('Folder not found');
+
+  const isOwner = folder.owner === req.user.username;
+  const isFriend = Array.isArray(folder.friends) && folder.friends.includes(req.user.username);
+  if (!isOwner && !isFriend) return reply.forbidden('Access denied');
+
+  const friends = folder.friends || [];
+
+  if (isOwner && folder.invitationId && folder.invitedUsername) {
+    friends.push(folder.invitedUsername);
+  }
+
+  await logActivity(req, 'view-friends', { folderId });
+  return { friends };
+});
+
 
 
 // POST /api/owner/make-staff-account
@@ -682,25 +743,14 @@ fastify.post('/api/owner/make-staff-account', { preHandler: [fastify.authenticat
   if (req.user.username !== OWNER_USERNAME) {
     return reply.forbidden('Only owner can create staff accounts');
   }
-
   const { username, password, email } = req.body;
-  if (!username || !password || !email) {
-    return reply.code(400).send({ error: 'Missing fields' });
-  }
-  if (password.length < 8) {
-    return reply.code(400).send({ error: 'Password too short' });
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return reply.code(400).send({ error: 'Invalid email' });
-  }
+  if (!username || !password || !email) return reply.code(400).send({ error: 'Missing fields' });
+  if (password.length < 8)                return reply.code(400).send({ error: 'Password too short' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return reply.code(400).send({ error: 'Invalid email' });
 
   try {
-    if (await usersColl.findOne({ username })) {
-      return reply.code(409).send({ error: 'User already exists' });
-    }
-    if (await usersColl.findOne({ email })) {
-      return reply.code(409).send({ error: 'E-mail already in use' });
-    }
+    if (await usersColl.findOne({ username })) return reply.code(409).send({ error: 'User already exists' });
+    if (await usersColl.findOne({ email }))    return reply.code(409).send({ error: 'E-mail already in use' });
 
     const hash = await bcrypt.hash(password, SALT_ROUNDS);
     await usersColl.insertOne({
@@ -710,7 +760,6 @@ fastify.post('/api/owner/make-staff-account', { preHandler: [fastify.authenticat
       role:      'staff',
       createdAt: new Date().toISOString()
     });
-
     await logActivity(req, 'make-staff-account', { username, email });
     return reply.code(201).send({ message: 'Staff account created successfully' });
   } catch (err) {
@@ -719,7 +768,7 @@ fastify.post('/api/owner/make-staff-account', { preHandler: [fastify.authenticat
   }
 });
 
-// --- STAFF PERMISSIONS ENDPOINTS ---
+// STAFF PERMISSIONS ENDPOINTS
 
 // View all pending invitations
 fastify.get('/api/staff/invitations', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
@@ -734,13 +783,12 @@ fastify.get('/api/staff/invitations', { preHandler: [fastify.authenticate, fasti
   }));
 });
 
-// Remove any user's shared-folder invitation
+// Remove a pending invitation
 fastify.delete('/api/staff/invitations/:invitationId', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const { invitationId } = req.params;
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
   const folder  = folders.find(f => f.invitationId === invitationId);
   if (!folder) return reply.notFound('Invitation not found');
-
   folder.invitationId   = null;
   folder.invitedUsername = null;
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
@@ -748,27 +796,22 @@ fastify.delete('/api/staff/invitations/:invitationId', { preHandler: [fastify.au
   return reply.send({ message: 'Invitation removed' });
 });
 
-// Kick a friend out of a shared folder
+// Kick a friend from a folder
 fastify.delete('/api/staff/folders/:folderId/friends/:friendUsername', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const { folderId, friendUsername } = req.params;
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
   const folder  = folders.find(f => f.folderId === folderId);
   if (!folder) return reply.notFound('Folder not found');
-
-  folder.friends = (folder.friends || []).filter(u => u !== friendUsername);
+  delete (folder.friendPermissions || {})[friendUsername];
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
   await logActivity(req, 'staff-remove-friend', { folderId, friendUsername });
   return reply.send({ message: `User ${friendUsername} removed from folder` });
 });
 
-// Scan folder contents metadata (but not download files)
+// Scan folder contents metadata (staff)
 fastify.get('/api/staff/folder-contents', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const { folderId } = req.query;
   if (!folderId) return reply.badRequest('folderId is required');
-
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const meta    = folders.find(f => f.folderId === folderId);
-  if (!meta) return reply.notFound('Folder not found');
 
   const folderPath = path.join(FOLDERS_DIR, folderId);
   const files      = await fsPromises.readdir(folderPath);
@@ -787,54 +830,42 @@ fastify.get('/api/staff/folder-contents', { preHandler: [fastify.authenticate, f
   return list;
 });
 
-// Flag a folder that violates policy
+// Flag a folder
 fastify.post('/api/staff/flag-folder/:folderId', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const { folderId } = req.params;
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
   const folder  = folders.find(f => f.folderId === folderId);
   if (!folder) return reply.notFound('Folder not found');
-
   folder.flagged = true;
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
-  
   try {
     await transporter.sendMail({
       from: `"File Sharing" <${process.env.EMAIL_USER}>`,
       to: process.env.EMAIL_USER,
       subject: 'Folder Flagged for Policy Violation',
-      text: `Folder has been flagged:
-      
-Reported by staff member: ${req.user.username}
-Folder ID: ${folderId}
-Folder Name: ${folder.folderName}
-Folder Owner: ${folder.owner}
-
-This folder has been marked for review due to potential policy violations.`
+      text: `Folder ID: ${folderId}\nName: ${folder.folderName}\nOwner: ${folder.owner}`
     });
   } catch (err) {
-    fastify.log.error('Failed to send flag notification email:', err);
+    fastify.log.error('Flag email error:', err);
   }
-
   await logActivity(req, 'staff-flag-folder', { folderId });
   return reply.send({ message: 'Folder flagged' });
 });
 
-// Delete an entire folder
+// Delete a folder (staff)
 fastify.delete('/api/staff/folders/:folderId', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const { folderId } = req.params;
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const index   = folders.findIndex(f => f.folderId === folderId);
-  if (index === -1) return reply.notFound('Folder not found');
-
-  // remove directory
+  const idx     = folders.findIndex(f => f.folderId === folderId);
+  if (idx === -1) return reply.notFound('Folder not found');
   await fsPromises.rm(path.join(FOLDERS_DIR, folderId), { recursive: true, force: true });
-  folders.splice(index, 1);
+  folders.splice(idx, 1);
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
   await logActivity(req, 'staff-delete-folder', { folderId });
   return reply.send({ message: 'Folder deleted' });
 });
 
-// Look up a user's account details
+// View user details (staff)
 fastify.get('/api/staff/users/:username', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const { username } = req.params;
   const user = await usersColl.findOne({ username }, { projection: { password: 0 } });
@@ -844,66 +875,50 @@ fastify.get('/api/staff/users/:username', { preHandler: [fastify.authenticate, f
     username: user.username,
     email:    user.email,
     role:     user.role,
-    createdAt: user.createdAt
+    createdAt:user.createdAt
   };
 });
 
-// Reset a user's password
+// Reset user password (staff)
 fastify.post('/api/staff/reset-password/:username', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const { username } = req.params;
   const user = await usersColl.findOne({ username });
   if (!user) return reply.notFound('User not found');
-
   const newPass = crypto.randomBytes(6).toString('hex');
-  const hash    = await bcrypt.hash(newPass, SALT_ROUNDS);
-  await usersColl.updateOne({ username }, { $set: { password: hash } });
-
+  await usersColl.updateOne({ username }, { $set: { password: await bcrypt.hash(newPass, SALT_ROUNDS) } });
   try {
     await transporter.sendMail({
       from: `"Support" <${process.env.EMAIL_USER}>`,
       to: user.email,
       subject: 'Your password has been reset',
-      text: `Hello ${username},\n\nYour new password is: ${newPass}\n\nPlease change it after logging in.\n`
+      text: `Hello ${username}, your new password is: ${newPass}`
     });
   } catch (err) {
-    fastify.log.error(err);
+    fastify.log.error('Reset email error:', err);
     return reply.internalServerError('Failed to send reset email');
   }
-
   await logActivity(req, 'staff-reset-password', { username });
   return reply.send({ message: 'Password reset email sent' });
 });
 
-// Read-only audit log access
+// View audit log (staff)
 fastify.get('/api/staff/audit-log', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
-  let { limit } = req.query;
-  limit = parseInt(limit, 10) || 100;
+  let limit = parseInt(req.query.limit, 10) || 100;
   if (limit > 1000) limit = 1000;
-
   const raw   = await fsPromises.readFile(AUDIT_LOG, 'utf8');
-  const lines = raw.trim().split('\n').filter(Boolean);
-  const entries = lines
-    .slice(-limit)
-    .map(line => {
-      try { return JSON.parse(line); }
-      catch { return null; }
-    })
-    .filter(Boolean);
-
+  const lines = raw.trim().split('\n').filter(Boolean).slice(-limit);
+  const entries = lines.map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean);
   await logActivity(req, 'staff-view-audit-log', { limit });
   return entries;
 });
 
-fastify.get('/api/staff/get-for-all-folders-ID', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+// Get all folder IDs (staff)
+fastify.get('/api/staff/get-for-all-folders-ID', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (_req, reply) => {
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const folderInfo = folders.map(f => ({
-    folderId: f.folderId,
-    owner: f.owner
-  }));
-  return { folders: folderInfo };
+  return { folders: folders.map(f => ({ folderId: f.folderId, owner: f.owner })) };
 });
 
-
+// Check role
 fastify.get('/api/check-role', { preHandler: [fastify.authenticate] }, async (req) => {
   return { role: req.user.role };
 });
