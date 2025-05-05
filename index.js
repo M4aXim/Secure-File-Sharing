@@ -83,7 +83,14 @@ fastify.register(require('@fastify/multipart'), { limits: { fileSize: MAX_FILE_S
 fastify.register(require('@fastify/sensible'));
 fastify.register(require('@fastify/jwt'),     { secret: JWT_SECRET, sign: { expiresIn: TOKEN_EXPIRATION } });
 fastify.register(require('@fastify/rate-limit'), { max: RATE_LIMIT_MAX, timeWindow: RATE_LIMIT_WIN });
-fastify.register(require('@fastify/static'),  { root: __dirname, prefix: '/', wildcard: false });
+
+// Serve static files without requiring “.html” in URLs
+fastify.register(require('@fastify/static'), {
+  root: __dirname,
+  prefix: '/',
+  index: false,        // Disable automatic index.html
+  extensions: ['html'] // Resolve URLs like /about → about.html
+});
 
 // --- AUTH DECORATOR ---
 fastify.decorate('authenticate', async (req, reply) => {
@@ -315,7 +322,8 @@ fastify.get('/api/folder-contents', { preHandler: [fastify.authenticate] }, asyn
 fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { folderId } = req.params;
   const upload = await req.file();
-  if (!upload)              return reply.badRequest('No file uploaded');
+
+  if (!upload) return reply.badRequest('No file uploaded');
   if (upload.file.truncated) return reply.entityTooLarge('File too large');
 
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
@@ -327,11 +335,14 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
   if (!isOwner && !perms?.upload) return reply.forbidden('Access denied');
 
   const filename = `${Date.now()}-${upload.filename}`;
+  const fileBuffer = await upload.toBuffer();
+
   await s3.send(new PutObjectCommand({
     Bucket: process.env.S3_BUCKET_NAME,
     Key:    `folders/${folderId}/${filename}`,
-    Body:   upload.file,
-    ContentType: upload.mimetype || mime.lookup(filename) || 'application/octet-stream'
+    Body:   fileBuffer,
+    ContentType: upload.mimetype || mime.lookup(filename) || 'application/octet-stream',
+    ContentLength: fileBuffer.length
   }));
 
   await logActivity(req, 'upload-file', { folderId, filename });
@@ -641,7 +652,7 @@ fastify.post('/api/law-enforcement-request/:username', { preHandler: [fastify.au
 
   const { email } = req.body;
   
-  // Validate .gov email
+  // Validate .gov or maksimmalbasa.in.rs email
   if (!email || !/^[^\s@]+@([^\s@]+\.(gov(\.[a-z]{2})?|gov)|maksimmalbasa\.in\.rs)$/.test(email)) {
     return reply.badRequest('Invalid or missing .gov email address');
   }
@@ -999,13 +1010,54 @@ fastify.get('/api/am-I-owner-of-folder/:folderId', { preHandler: [fastify.authen
   
   return { isOwner: isOwner || hasAddUsersPermission };
 });
+// --- CAT API ENDPOINT ---
+fastify.get('/api/curl/cats', async (req, reply) => {
+  try {
+    const headers = new Headers({
+      "Content-Type": "application/json",
+      "x-api-key": process.env.CAT_API_KEY
+    });
 
-// SPA fallback
+    const requestOptions = {
+      method: 'GET',
+      headers: headers,
+      redirect: 'follow'
+    };
+    
+    const response = await fetch(
+      "https://api.thecatapi.com/v1/images/search?size=med&mime_types=jpg&format=json&has_breeds=true&order=RANDOM&page=0&limit=1",
+      requestOptions
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Cat API responded with status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (err) {
+    fastify.log.error('Error fetching cat data:', err);
+    return reply.internalServerError('Failed to fetch cat data');
+  }
+});
+
+// --- SPA fallback for non-API routes ---
 fastify.setNotFoundHandler((req, reply) => {
   if (req.raw.url.startsWith('/api/')) {
     return reply.callNotFound();
   }
   return reply.sendFile('index.html');
+});
+
+// --- Custom 404 page for remaining 404s ---
+fastify.setErrorHandler((error, req, reply) => {
+  if (error.statusCode === 404 && !req.raw.url.startsWith('/api/')) {
+    return reply
+      .code(404)
+      .type('text/html')
+      .sendFile('404.html');
+  }
+  return reply.send(error);
 });
 
 // --- STARTUP ---
