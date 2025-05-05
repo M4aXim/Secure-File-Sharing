@@ -1161,6 +1161,106 @@ fastify.get('/api/is-folder-public/:folderId', async (req, reply) => {
   return { isPublic: folder.isPublic };
 });
 
+
+async function listAllObjects(prefix) {
+  let all = [];
+  let token;
+  do {
+    const res = await s3.send(new ListObjectsV2Command({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Prefix: prefix,
+      ContinuationToken: token
+    }));
+    all = all.concat(res.Contents || []);
+    token = res.IsTruncated ? res.NextContinuationToken : null;
+  } while (token);
+  return all;
+}
+
+fastify.get('/api/staff/stats/total-users', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const totalUsers = await usersColl.countDocuments();
+  return { totalUsers };
+});
+
+fastify.get('/api/staff/stats/total-folders', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  return { totalFolders: folders.length };
+});
+
+fastify.get('/api/staff/stats/total-public-folders', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const count = folders.filter(f => f.isPublic).length;
+  return { totalPublicFolders: count };
+});
+
+fastify.get('/api/staff/stats/total-private-folders', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const count = folders.filter(f => !f.isPublic).length;
+  return { totalPrivateFolders: count };
+});
+
+fastify.get('/api/staff/stats/total-files', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const objects = await listAllObjects('folders/');
+  return { totalFiles: objects.length };
+});
+
+fastify.get('/api/staff/stats/total-storage-used', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const objects = await listAllObjects('folders/');
+  const totalStorage = objects.reduce((sum, o) => sum + (o.Size || 0), 0);
+  return { totalStorage };
+});
+
+fastify.get('/api/staff/stats/average-files-per-folder', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const objects = await listAllObjects('folders/');
+  const avg = folders.length ? objects.length / folders.length : 0;
+  return { averageFilesPerFolder: avg };
+});
+
+fastify.get('/api/staff/stats/top-users-by-folders', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const counts = {};
+  folders.forEach(f => { counts[f.owner] = (counts[f.owner]||0) + 1; });
+  const top = Object.entries(counts)
+    .sort((a,b) => b[1] - a[1])
+    .slice(0,5)
+    .map(([username, count]) => ({ username, folderCount: count }));
+  return { topUsersByFolders: top };
+});
+
+fastify.get('/api/staff/stats/top-users-by-files', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folderMap = folders.reduce((m,f) => { m[f.folderId] = f.owner; return m; }, {});
+  const objects = await listAllObjects('folders/');
+  const userFiles = {};
+  objects.forEach(o => {
+    const parts = o.Key.split('/');
+    const folderId = parts[1];
+    const owner = folderMap[folderId] || 'unknown';
+    userFiles[owner] = (userFiles[owner]||0) + 1;
+  });
+  const top = Object.entries(userFiles)
+    .sort((a,b) => b[1] - a[1])
+    .slice(0,5)
+    .map(([username, fileCount]) => ({ username, fileCount }));
+  return { topUsersByFiles: top };
+});
+
+fastify.get('/api/staff/stats/recent-uploads', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const raw = await fsPromises.readFile(AUDIT_LOG, 'utf8');
+  const since = Date.now() - 24*60*60*1000;
+  const lines = raw.split('\n').filter(Boolean);
+  const count = lines.reduce((acc, line) => {
+    try {
+      const e = JSON.parse(line);
+      if (e.activity === 'upload-file' && new Date(e.timestamp).getTime() >= since) return acc + 1;
+    } catch {}
+    return acc;
+  }, 0);
+  return { recentUploads: count };
+});
+
+
 // --- SPA fallback for non-API routes ---
 fastify.setNotFoundHandler((req, reply) => {
   if (req.raw.url.startsWith('/api/')) {

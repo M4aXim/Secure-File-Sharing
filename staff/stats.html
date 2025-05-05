@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staff analytics</title>
+    <!-- Bulma CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.4/css/bulma.min.css">
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .dashboard-card {
+            height: 100%;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .dashboard-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 16px rgba(10, 10, 10, 0.1);
+        }
+        .card-icon {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.is-active {
+            display: block;
+        }
+        .statistic-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+        .statistic-label {
+            font-size: 1rem;
+            color: #7a7a7a;
+        }
+        .stat-container {
+            padding: 1.5rem;
+        }
+        .user-list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #f5f5f5;
+        }
+        .user-list-item:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar is-primary" role="navigation" aria-label="main navigation">
+        <div class="navbar-brand">
+            <a class="navbar-item" href="#">
+                <strong>Staff Dashboard</strong>
+            </a>
+            <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false">
+                <span aria-hidden="true"></span>
+                <span aria-hidden="true"></span>
+                <span aria-hidden="true"></span>
+            </a>
+        </div>
+        <div class="navbar-menu">
+            <div class="navbar-end">
+                <div class="navbar-item">
+                    <div class="buttons">
+                        <a class="button is-light" id="refreshButton">
+                            <i class="fas fa-sync-alt mr-2"></i>
+                            Refresh Data
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <section class="section">
+        <div class="container">
+            <div class="tabs is-centered is-boxed">
+                <ul>
+                    <li class="is-active" data-tab="overview">
+                        <a>
+                            <span class="icon is-small"><i class="fas fa-tachometer-alt"></i></span>
+                            <span>Overview</span>
+                        </a>
+                    </li>
+                    <li data-tab="folder-stats">
+                        <a>
+                            <span class="icon is-small"><i class="fas fa-folder"></i></span>
+                            <span>Folder Statistics</span>
+                        </a>
+                    </li>
+                    <li data-tab="user-stats">
+                        <a>
+                            <span class="icon is-small"><i class="fas fa-users"></i></span>
+                            <span>User Statistics</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Overview Tab -->
+            <div id="overview" class="tab-content is-active">
+                <div class="notification is-light">
+                    <p>System overview showing key metrics at a glance. Last updated: <span id="lastUpdated">Loading...</span></p>
+                </div>
+                
+                <div class="columns is-multiline">
+                    <!-- Total Users Card -->
+                    <div class="column is-3">
+                        <div class="card dashboard-card">
+                            <div class="card-content has-text-centered">
+                                <div class="card-icon has-text-info">
+                                    <i class="fas fa-users"></i>
+                                </div>
+                                <p class="statistic-label">Total Users</p>
+                                <p class="statistic-value" id="totalUsers">-</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Total Folders Card -->
+                    <div class="column is-3">
+                        <div class="card dashboard-card">
+                            <div class="card-content has-text-centered">
+                                <div class="card-icon has-text-primary">
+                                    <i class="fas fa-folder"></i>
+                                </div>
+                                <p class="statistic-label">Total Folders</p>
+                                <p class="statistic-value" id="totalFolders">-</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Total Files Card -->
+                    <div class="column is-3">
+                        <div class="card dashboard-card">
+                            <div class="card-content has-text-centered">
+                                <div class="card-icon has-text-success">
+                                    <i class="fas fa-file"></i>
+                                </div>
+                                <p class="statistic-label">Total Files</p>
+                                <p class="statistic-value" id="totalFiles">-</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Storage Used Card -->
+                    <div class="column is-3">
+                        <div class="card dashboard-card">
+                            <div class="card-content has-text-centered">
+                                <div class="card-icon has-text-warning">
+                                    <i class="fas fa-database"></i>
+                                </div>
+                                <p class="statistic-label">Storage Used</p>
+                                <p class="statistic-value" id="totalStorage">-</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Recent Activity Card -->
+                    <div class="column is-6">
+                        <div class="card dashboard-card">
+                            <div class="card-header">
+                                <p class="card-header-title">
+                                    <span class="icon mr-2"><i class="fas fa-chart-line"></i></span>
+                                    Recent Activity
+                                </p>
+                            </div>
+                            <div class="card-content">
+                                <div class="content">
+                                    <div class="stat-container">
+                                        <p class="is-size-4 mb-2">Recent Uploads (24h)</p>
+                                        <p class="is-size-2 has-text-weight-bold" id="recentUploads">-</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Average Stats Card -->
+                    <div class="column is-6">
+                        <div class="card dashboard-card">
+                            <div class="card-header">
+                                <p class="card-header-title">
+                                    <span class="icon mr-2"><i class="fas fa-calculator"></i></span>
+                                    Average Statistics
+                                </p>
+                            </div>
+                            <div class="card-content">
+                                <div class="content">
+                                    <div class="stat-container">
+                                        <p class="is-size-4 mb-2">Average Files Per Folder</p>
+                                        <p class="is-size-2 has-text-weight-bold" id="averageFilesPerFolder">-</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Folder Statistics Tab -->
+            <div id="folder-stats" class="tab-content">
+                <div class="notification is-light">
+                    <p>Detailed folder statistics and distribution.</p>
+                </div>
+                
+                <div class="columns is-multiline">
+                    <!-- Folder Distribution Card -->
+                    <div class="column is-6">
+                        <div class="card dashboard-card">
+                            <div class="card-header">
+                                <p class="card-header-title">
+                                    <span class="icon mr-2"><i class="fas fa-chart-pie"></i></span>
+                                    Folder Distribution
+                                </p>
+                            </div>
+                            <div class="card-content">
+                                <div class="columns">
+                                    <div class="column is-6">
+                                        <div class="has-text-centered mb-4">
+                                            <span class="icon is-large has-text-success">
+                                                <i class="fas fa-folder-open fa-2x"></i>
+                                            </span>
+                                            <p class="is-size-4 mt-2">Public Folders</p>
+                                            <p class="is-size-2 has-text-weight-bold" id="totalPublicFolders">-</p>
+                                        </div>
+                                    </div>
+                                    <div class="column is-6">
+                                        <div class="has-text-centered mb-4">
+                                            <span class="icon is-large has-text-danger">
+                                                <i class="fas fa-folder-open fa-2x"></i>
+                                            </span>
+                                            <p class="is-size-4 mt-2">Private Folders</p>
+                                            <p class="is-size-2 has-text-weight-bold" id="totalPrivateFolders">-</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <progress class="progress is-success" id="folderProgressBar" value="50" max="100"></progress>
+                                <p class="has-text-centered" id="folderDistributionText">Loading folder distribution...</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Storage Stats Card -->
+                    <div class="column is-6">
+                        <div class="card dashboard-card">
+                            <div class="card-header">
+                                <p class="card-header-title">
+                                    <span class="icon mr-2"><i class="fas fa-hdd"></i></span>
+                                    Storage Information
+                                </p>
+                            </div>
+                            <div class="card-content">
+                                <div class="content">
+                                    <div class="columns is-multiline">
+                                        <div class="column is-6">
+                                            <div class="stat-container has-text-centered">
+                                                <p class="is-size-5">Total Storage</p>
+                                                <p class="is-size-3 has-text-weight-bold" id="storageSizeFormatted">-</p>
+                                            </div>
+                                        </div>
+                                        <div class="column is-6">
+                                            <div class="stat-container has-text-centered">
+                                                <p class="is-size-5">Avg. File Size</p>
+                                                <p class="is-size-3 has-text-weight-bold" id="avgFileSize">-</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User Statistics Tab -->
+            <div id="user-stats" class="tab-content">
+                <div class="notification is-light">
+                    <p>User activity and resource usage statistics.</p>
+                </div>
+                
+                <div class="columns is-multiline">
+                    <!-- Top Users by Folders -->
+                    <div class="column is-6">
+                        <div class="card dashboard-card">
+                            <div class="card-header">
+                                <p class="card-header-title">
+                                    <span class="icon mr-2"><i class="fas fa-trophy"></i></span>
+                                    Top Users by Folders
+                                </p>
+                            </div>
+                            <div class="card-content">
+                                <div class="content" id="topUsersByFolders">
+                                    <p class="has-text-centered">Loading user data...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Top Users by Files -->
+                    <div class="column is-6">
+                        <div class="card dashboard-card">
+                            <div class="card-header">
+                                <p class="card-header-title">
+                                    <span class="icon mr-2"><i class="fas fa-trophy"></i></span>
+                                    Top Users by Files
+                                </p>
+                            </div>
+                            <div class="card-content">
+                                <div class="content" id="topUsersByFiles">
+                                    <p class="has-text-centered">Loading user data...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="content has-text-centered">
+            <p>
+                <strong>Staff analytics</strong> - © 2025 File Storage System
+            </p>
+        </div>
+    </footer>
+
+    <script>
+        // Tab switching functionality
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabs = document.querySelectorAll('.tabs li');
+            const tabContents = document.querySelectorAll('.tab-content');
+            
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(t => t.classList.remove('is-active'));
+                    tab.classList.add('is-active');
+                    
+                    const tabId = tab.getAttribute('data-tab');
+                    tabContents.forEach(content => {
+                        content.classList.remove('is-active');
+                        if (content.id === tabId) {
+                            content.classList.add('is-active');
+                        }
+                    });
+                });
+            });
+
+            // Mobile navbar toggle
+            const navbarBurger = document.querySelector('.navbar-burger');
+            const navbarMenu = document.querySelector('.navbar-menu');
+            
+            navbarBurger.addEventListener('click', () => {
+                navbarBurger.classList.toggle('is-active');
+                navbarMenu.classList.toggle('is-active');
+            });
+            
+            // Load data immediately
+            loadAllData();
+            
+            // Set up refresh button
+            document.getElementById('refreshButton').addEventListener('click', loadAllData);
+        });
+        
+        // Utility function to format bytes to human-readable format
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
+            
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+        
+        // Function to fetch data from all endpoints and update UI
+        async function loadAllData() {
+            try {
+                // Get JWT token from localStorage
+                const token = localStorage.getItem('jwtToken');
+                if (!token) {
+                    alert('Authentication token not found. Please log in first.');
+                    return;
+                }
+                
+                const endpoints = [
+                    '/api/staff/stats/total-users',
+                    '/api/staff/stats/total-folders',
+                    '/api/staff/stats/total-public-folders',
+                    '/api/staff/stats/total-private-folders',
+                    '/api/staff/stats/total-files',
+                    '/api/staff/stats/total-storage-used',
+                    '/api/staff/stats/average-files-per-folder',
+                    '/api/staff/stats/top-users-by-folders',
+                    '/api/staff/stats/top-users-by-files',
+                    '/api/staff/stats/recent-uploads'
+                ];
+                
+                // Fetch all data in parallel with Authorization header
+                const responses = await Promise.all(endpoints.map(endpoint => 
+                    fetch(endpoint, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    })
+                    .then(res => {
+                        if (!res.ok) {
+                            throw new Error(`Error fetching ${endpoint}: ${res.status}`);
+                        }
+                        return res.json();
+                    })
+                    .catch(err => {
+                        console.error(`Error fetching ${endpoint}:`, err);
+                        return null;
+                    })
+                ));
+                
+                // Update timestamp
+                document.getElementById('lastUpdated').textContent = new Date().toLocaleString();
+                
+                // Process responses
+                const [
+                    totalUsersData,
+                    totalFoldersData,
+                    totalPublicFoldersData,
+                    totalPrivateFoldersData,
+                    totalFilesData,
+                    totalStorageData,
+                    avgFilesPerFolderData,
+                    topUsersByFoldersData,
+                    topUsersByFilesData,
+                    recentUploadsData
+                ] = responses;
+                
+                // Update UI with data
+                updateUIWithData({
+                    totalUsersData,
+                    totalFoldersData,
+                    totalPublicFoldersData,
+                    totalPrivateFoldersData,
+                    totalFilesData,
+                    totalStorageData,
+                    avgFilesPerFolderData,
+                    topUsersByFoldersData,
+                    topUsersByFilesData,
+                    recentUploadsData
+                });
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                alert('Failed to load dashboard data. Please try again later.');
+            }
+        }
+        
+        // Function to update UI elements with fetched data
+        function updateUIWithData(data) {
+            // Basic stats
+            if (data.totalUsersData) {
+                document.getElementById('totalUsers').textContent = data.totalUsersData.totalUsers.toLocaleString();
+            }
+            
+            if (data.totalFoldersData) {
+                document.getElementById('totalFolders').textContent = data.totalFoldersData.totalFolders.toLocaleString();
+            }
+            
+            if (data.totalFilesData) {
+                document.getElementById('totalFiles').textContent = data.totalFilesData.totalFiles.toLocaleString();
+            }
+            
+            if (data.totalStorageData) {
+                const bytes = data.totalStorageData.totalStorage;
+                document.getElementById('totalStorage').textContent = formatBytes(bytes);
+                document.getElementById('storageSizeFormatted').textContent = formatBytes(bytes);
+                
+                // Calculate average file size if we have both stats
+                if (data.totalFilesData && data.totalFilesData.totalFiles > 0) {
+                    const avgSize = bytes / data.totalFilesData.totalFiles;
+                    document.getElementById('avgFileSize').textContent = formatBytes(avgSize);
+                } else {
+                    document.getElementById('avgFileSize').textContent = 'N/A';
+                }
+            }
+            
+            // Folder distribution
+            if (data.totalPublicFoldersData && data.totalPrivateFoldersData) {
+                const publicFolders = data.totalPublicFoldersData.totalPublicFolders;
+                const privateFolders = data.totalPrivateFoldersData.totalPrivateFolders;
+                
+                document.getElementById('totalPublicFolders').textContent = publicFolders.toLocaleString();
+                document.getElementById('totalPrivateFolders').textContent = privateFolders.toLocaleString();
+                
+                // Update progress bar
+                const total = publicFolders + privateFolders;
+                if (total > 0) {
+                    const publicPercentage = (publicFolders / total) * 100;
+                    document.getElementById('folderProgressBar').value = publicPercentage;
+                    document.getElementById('folderDistributionText').textContent = 
+                        `${publicPercentage.toFixed(1)}% Public / ${(100 - publicPercentage).toFixed(1)}% Private`;
+                } else {
+                    document.getElementById('folderProgressBar').value = 0;
+                    document.getElementById('folderDistributionText').textContent = 'No folders available';
+                }
+            }
+            
+            // Average files per folder
+            if (data.avgFilesPerFolderData) {
+                document.getElementById('averageFilesPerFolder').textContent = 
+                    data.avgFilesPerFolderData.averageFilesPerFolder.toFixed(1);
+            }
+            
+            // Recent uploads
+            if (data.recentUploadsData) {
+                document.getElementById('recentUploads').textContent = 
+                    data.recentUploadsData.recentUploads.toLocaleString();
+            }
+            
+            // Top users by folders
+            if (data.topUsersByFoldersData && data.topUsersByFoldersData.topUsersByFolders) {
+                const users = data.topUsersByFoldersData.topUsersByFolders;
+                const container = document.getElementById('topUsersByFolders');
+                container.innerHTML = '';
+                
+                if (users.length === 0) {
+                    container.innerHTML = '<p class="has-text-centered">No user data available</p>';
+                } else {
+                    users.forEach((user, index) => {
+                        const userItem = document.createElement('div');
+                        userItem.className = 'user-list-item';
+                        userItem.innerHTML = `
+                            <div>
+                                <span class="icon-text">
+                                    <span class="icon has-text-info">
+                                        <i class="fas fa-user-circle"></i>
+                                    </span>
+                                    <span class="has-text-weight-medium">${user.username}</span>
+                                </span>
+                            </div>
+                            <div>
+                                <span class="tag is-primary is-medium">${user.folderCount} folders</span>
+                            </div>
+                        `;
+                        container.appendChild(userItem);
+                    });
+                }
+            }
+            
+            // Top users by files
+            if (data.topUsersByFilesData && data.topUsersByFilesData.topUsersByFiles) {
+                const users = data.topUsersByFilesData.topUsersByFiles;
+                const container = document.getElementById('topUsersByFiles');
+                container.innerHTML = '';
+                
+                if (users.length === 0) {
+                    container.innerHTML = '<p class="has-text-centered">No user data available</p>';
+                } else {
+                    users.forEach((user, index) => {
+                        const userItem = document.createElement('div');
+                        userItem.className = 'user-list-item';
+                        userItem.innerHTML = `
+                            <div>
+                                <span class="icon-text">
+                                    <span class="icon has-text-info">
+                                        <i class="fas fa-user-circle"></i>
+                                    </span>
+                                    <span class="has-text-weight-medium">${user.username}</span>
+                                </span>
+                            </div>
+                            <div>
+                                <span class="tag is-success is-medium">${user.fileCount} files</span>
+                            </div>
+                        `;
+                        container.appendChild(userItem);
+                    });
+                }
+            }
+        }
+    </script>
+</body>
+</html>
