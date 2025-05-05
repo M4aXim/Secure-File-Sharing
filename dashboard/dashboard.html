@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --sidebar-width: 240px;
+      --text-primary: #202124;
+      --text-secondary: #5f6368;
+      --border-light: #dadce0;
+      --hover-bg: #f1f3f4;
+    }
+
+    * {
+      box-sizing: border-box;
+      font-family: 'Google Sans', Roboto, Arial, sans-serif;
+    }
+
+    body {
+      display: flex;
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text-primary);
+    }
+
+    /* SIDEBAR */
+    .sidebar {
+      width: var(--sidebar-width);
+      padding: 8px 0;
+      background: #fff;
+      border-right: 1px solid var(--border-light);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .new-folder {
+      margin: 8px 16px;
+      background: #fff;
+      color: var(--text-primary);
+      border: 1px solid var(--border-light);
+      border-radius: 24px;
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      width: calc(100% - 32px);
+    }
+
+    .new-folder:hover {
+      background: var(--hover-bg);
+    }
+
+    .new-folder .icon {
+      margin-right: 12px;
+      font-size: 20px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 16px 8px 24px;
+      color: var(--text-primary);
+      font-size: 14px;
+      cursor: pointer;
+      margin: 2px 0;
+    }
+
+    .nav-item:hover {
+      background: var(--hover-bg);
+    }
+
+    .nav-item.active {
+      background: #e8f0fe;
+      color: #1a73e8;
+    }
+    
+    /* New style for shared with me when active */
+    .nav-item.shared-active {
+      background: #e8f0fe;
+      color: #4285f4;
+    }
+
+    .nav-item .icon {
+      width: 24px;
+      margin-right: 18px;
+      text-align: center;
+      color: var(--text-secondary);
+    }
+
+    .nav-item.active .icon {
+      color: #1a73e8;
+    }
+    
+    /* Icon color for shared when active */
+    .nav-item.shared-active .icon {
+      color: #4285f4;
+    }
+
+    /* User actions section */
+    .user-actions {
+      margin-top: auto;
+      border-top: 1px solid var(--border-light);
+      padding-top: 16px;
+      margin-bottom: 16px;
+    }
+
+    .user-action-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 16px 8px 24px;
+      color: var(--text-primary);
+      font-size: 14px;
+      cursor: pointer;
+      margin: 2px 0;
+    }
+
+    .user-action-item:hover {
+      background: var(--hover-bg);
+    }
+
+    .user-action-item .icon {
+      width: 24px;
+      margin-right: 18px;
+      text-align: center;
+      color: var(--text-secondary);
+    }
+
+    /* MAIN CONTENT */
+    .main-content {
+      flex-grow: 1;
+      padding: 24px;
+      background: #fff;
+    }
+
+    .folder-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+      margin-top: 24px;
+    }
+
+    .folder-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+      border: 1px solid var(--border-light);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .folder-item:hover {
+      background: var(--hover-bg);
+    }
+
+    .folder-icon {
+      font-size: 48px;
+      color: #fbbc04;
+      margin-bottom: 8px;
+    }
+    
+    /* Blue folder color for shared folders */
+    .folder-icon.shared {
+      color: #4285f4;
+    }
+
+    .folder-name {
+      font-size: 14px;
+      text-align: center;
+      word-break: break-word;
+      max-width: 100%;
+    }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 24px;
+      border-radius: 8px;
+      width: 400px;
+    }
+
+    .modal-title {
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+
+    .modal-input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border-light);
+      border-radius: 4px;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+
+    .modal-input-group {
+      margin-bottom: 16px;
+    }
+
+    .modal-input-group label {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    .modal-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .modal-button {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .modal-button.cancel {
+      background: transparent;
+      border: 1px solid var(--border-light);
+    }
+
+    .modal-button.create,
+    .modal-button.submit {
+      background: #1a73e8;
+      color: white;
+      border: none;
+    }
+
+    .error-message {
+      color: #d93025;
+      font-size: 12px;
+      margin-top: 4px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <button class="new-folder" onclick="showCreateFolderModal()">
+      <span class="icon"><i class="fas fa-folder-plus"></i></span>
+      <span>Make a folder</span>
+    </button>
+    
+    <div class="nav-item" id="homeNav">
+      <span class="icon"><i class="fas fa-home"></i></span>
+      <span>Home</span>
+    </div>
+    <div class="nav-item active" id="myDriveNav" onclick="activateMyDrive()">
+      <span class="icon"><i class="fas fa-hdd"></i></span>
+      <span>My Folders</span>
+    </div>
+    <div class="nav-item" id="sharedNav" onclick="activateShared()">
+      <span class="icon"><i class="fas fa-user-friends"></i></span>
+      <span>Shared with me</span>
+    </div>
+    
+    <!-- User actions section -->
+    <div class="user-actions">
+      <div class="user-action-item" onclick="showChangePasswordModal()">
+        <span class="icon"><i class="fas fa-key"></i></span>
+        <span>Change Password</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main class="main-content">
+    <div class="folder-grid" id="folderGrid">
+      <!-- Folders will be displayed here -->
+    </div>
+  </main>
+
+  <!-- CREATE FOLDER MODAL -->
+  <div class="modal" id="createFolderModal">
+    <div class="modal-content">
+      <div class="modal-title">Create new folder</div>
+      <input type="text" class="modal-input" id="folderNameInput" placeholder="Folder name">
+      <div class="modal-buttons">
+        <button class="modal-button cancel" onclick="hideCreateFolderModal()">Cancel</button>
+        <button class="modal-button create" onclick="createFolder()">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHANGE PASSWORD MODAL -->
+  <div class="modal" id="changePasswordModal">
+    <div class="modal-content">
+      <div class="modal-title">Change Password</div>
+      
+      <div class="modal-input-group">
+        <label for="oldPasswordInput">Current Password</label>
+        <input type="password" class="modal-input" id="oldPasswordInput" placeholder="Enter current password">
+      </div>
+      
+      <div class="modal-input-group">
+        <label for="newPasswordInput">New Password</label>
+        <input type="password" class="modal-input" id="newPasswordInput" placeholder="Enter new password">
+        <div class="error-message" id="newPasswordError"></div>
+      </div>
+      
+      <div class="modal-input-group">
+        <label for="confirmPasswordInput">Confirm New Password</label>
+        <input type="password" class="modal-input" id="confirmPasswordInput" placeholder="Confirm new password">
+        <div class="error-message" id="confirmPasswordError"></div>
+      </div>
+      
+      <div class="error-message" id="generalPasswordError"></div>
+      
+      <div class="modal-buttons">
+        <button class="modal-button cancel" onclick="hideChangePasswordModal()">Cancel</button>
+        <button class="modal-button submit" onclick="changePassword()">Change Password</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/javascript/dashboard.js"></script>
+</body>
+</html>

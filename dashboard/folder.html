@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Folder View - FileShare</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body {
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .content-box {
+      background-color: rgba(255, 255, 255, 0.95);
+      padding: 2rem;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+      margin: 3rem auto;
+      max-width: 900px;
+      transition: all 0.3s ease;
+    }
+
+    .content-box:hover {
+      box-shadow: 0 12px 28px rgba(0, 0, 0, 0.15);
+    }
+
+    footer {
+      margin-top: auto;
+      padding: 1.5rem;
+      background-color: rgba(255, 255, 255, 0.8);
+      text-align: center;
+      color: #555;
+      font-weight: 500;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem;
+      border-radius: 6px;
+      margin-bottom: 0.5rem;
+      background-color: #f9f9f9;
+      transition: all 0.2s ease;
+    }
+
+    .file-item:hover {
+      background-color: #f0f0f0;
+      transform: translateY(-2px);
+    }
+
+    .file-icon {
+      margin-right: 1rem;
+      color: #4a6fa5;
+      font-size: 1.2rem;
+      width: 24px;
+      text-align: center;
+    }
+
+    .file-info {
+      flex-grow: 1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .file-name {
+      font-weight: 500;
+      color: #333;
+    }
+
+    .file-meta {
+      color: #777;
+      font-size: 0.85rem;
+    }
+
+    .file-actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .empty-folder {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: #888;
+    }
+
+    .drop-zone {
+      border: 2px dashed #4a6fa5;
+      border-radius: 8px;
+      padding: 2rem;
+      text-align: center;
+      margin-bottom: 2rem;
+      transition: all 0.3s ease;
+      background-color: rgba(74, 111, 165, 0.05);
+    }
+
+    .drop-zone.active {
+      background-color: rgba(74, 111, 165, 0.15);
+      border-color: #3273dc;
+    }
+
+    .progress-container {
+      display: none;
+      margin-top: 1rem;
+    }
+
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      padding: 1rem;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transform: translateY(-100px);
+      opacity: 0;
+      transition: all 0.3s ease;
+    }
+
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .loading-spinner {
+      display: none;
+      margin: 0 auto;
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(74, 111, 165, 0.3);
+      border-radius: 50%;
+      border-top-color: #3273dc;
+      animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .file-size {
+      white-space: nowrap;
+      margin-left: 1rem;
+    }
+
+    .file-date {
+      white-space: nowrap;
+      margin-left: 1rem;
+    }
+  </style>
+</head>
+
+<body>
+  <section class="section">
+    <div class="container">
+      <div class="content-box">
+        <h1 class="title is-3 has-text-primary">
+          <i class="fas fa-folder-open mr-2"></i> Folder Contents
+        </h1>
+        <p class="subtitle is-6 has-text-grey">Folder ID: <span id="folderId" class="has-text-weight-bold"></span></p>
+
+        <div class="drop-zone" id="dropZone">
+          <i class="fas fa-cloud-upload-alt fa-3x mb-3" style="color: #4a6fa5;"></i>
+          <p class="is-size-5 mb-2">Drag & drop files here</p>
+          <p class="is-size-7 has-text-grey">or</p>
+          <div class="file has-name is-centered my-3">
+            <label class="file-label">
+              <input class="file-input" type="file" id="fileInput" name="file">
+              <span class="file-cta">
+                <span class="file-icon">
+                  <i class="fas fa-upload"></i>
+                </span>
+                <span class="file-label">Choose a file…</span>
+              </span>
+              <span class="file-name" id="fileName">No file selected</span>
+            </label>
+          </div>
+          <button class="button is-primary is-small" id="uploadButton" disabled>
+            <span class="icon">
+              <i class="fas fa-upload"></i>
+            </span>
+            <span>Upload</span>
+          </button>
+
+          <div class="progress-container" id="progressContainer">
+            <progress class="progress is-primary" id="uploadProgress" value="0" max="100"></progress>
+            <p class="has-text-centered is-size-7 has-text-grey" id="progressText">0%</p>
+          </div>
+        </div>
+
+        <div class="is-flex is-justify-content-space-between is-align-items-center mb-4">
+          <div class="buttons">
+            <button class="button is-link is-small" id="addFriendButton">
+              <span class="icon">
+                <i class="fas fa-user-plus"></i>
+              </span>
+              <span>Add Friend</span>
+            </button>
+            <button class="button is-warning is-small" id="changePermissionButton">
+              <span class="icon"><i class="fas fa-user-cog"></i></span>
+              <span>Change Permission</span>
+            </button>
+            <button class="button is-success is-small" id="makePublicButton">
+              <span class="icon"><i class="fas fa-globe"></i></span>
+              <span>Make Public</span>
+            </button>
+          </div>
+          <div class="field has-addons">
+            <div class="control">
+              <input class="input is-small" type="text" id="searchInput" placeholder="Search files...">
+            </div>
+            <div class="control">
+              <button class="button is-primary is-small" id="refreshButton">
+                <span class="icon">
+                  <i class="fas fa-sync-alt"></i>
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="loadingSpinner" class="loading-spinner my-5"></div>
+        <div id="folderContents" class="mb-4"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Permission Modal -->
+  <div class="modal" id="permissionModal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Change Permissions</p>
+        <button class="delete" aria-label="close" id="closePermissionModal"></button>
+      </header>
+      <section class="modal-card-body" id="permissionModalBody">
+        <!-- Dynamic content inserted here -->
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-success" id="savePermissionsButton">Save changes</button>
+        <button class="button" id="closePermissionModalFooter">Cancel</button>
+      </footer>
+    </div>
+  </div>
+
+  <div class="notification is-success" id="notificationSuccess">
+    <button class="delete" id="closeNotification"></button>
+    <span id="notificationText"></span>
+  </div>
+
+  <footer>
+    <p><strong>FileShare</strong> &copy; 2025 | Made with <i class="fas fa-heart has-text-danger"></i> by Maksim</p>
+  </footer>
+
+  <script src="/javascript/folder.js"></script>
+
+  </body>
+
+</html>

@@ -1,0 +1,250 @@
+        // Tab switching functionality
+        document.addEventListener('DOMContentLoaded', () => {
+            const tabs = document.querySelectorAll('.tabs li');
+            const tabContents = document.querySelectorAll('.tab-content');
+            
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(t => t.classList.remove('is-active'));
+                    tab.classList.add('is-active');
+                    
+                    const tabId = tab.getAttribute('data-tab');
+                    tabContents.forEach(content => {
+                        content.classList.remove('is-active');
+                        if (content.id === tabId) {
+                            content.classList.add('is-active');
+                        }
+                    });
+                });
+            });
+
+            // Mobile navbar toggle
+            const navbarBurger = document.querySelector('.navbar-burger');
+            const navbarMenu = document.querySelector('.navbar-menu');
+            
+            navbarBurger.addEventListener('click', () => {
+                navbarBurger.classList.toggle('is-active');
+                navbarMenu.classList.toggle('is-active');
+            });
+            
+            // Load data immediately
+            loadAllData();
+            
+            // Set up refresh button
+            document.getElementById('refreshButton').addEventListener('click', loadAllData);
+        });
+        
+        // Utility function to format bytes to human-readable format
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
+            
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+        
+        // Function to fetch data from all endpoints and update UI
+        async function loadAllData() {
+            try {
+                // Get JWT token from localStorage
+                const token = localStorage.getItem('jwtToken');
+                if (!token) {
+                    alert('Authentication token not found. Please log in first.');
+                    return;
+                }
+                
+                const endpoints = [
+                    '/api/staff/stats/total-users',
+                    '/api/staff/stats/total-folders',
+                    '/api/staff/stats/total-public-folders',
+                    '/api/staff/stats/total-private-folders',
+                    '/api/staff/stats/total-files',
+                    '/api/staff/stats/total-storage-used',
+                    '/api/staff/stats/average-files-per-folder',
+                    '/api/staff/stats/top-users-by-folders',
+                    '/api/staff/stats/top-users-by-files',
+                    '/api/staff/stats/recent-uploads'
+                ];
+                
+                // Fetch all data in parallel with Authorization header
+                const responses = await Promise.all(endpoints.map(endpoint => 
+                    fetch(endpoint, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    })
+                    .then(res => {
+                        if (!res.ok) {
+                            throw new Error(`Error fetching ${endpoint}: ${res.status}`);
+                        }
+                        return res.json();
+                    })
+                    .catch(err => {
+                        console.error(`Error fetching ${endpoint}:`, err);
+                        return null;
+                    })
+                ));
+                
+                // Update timestamp
+                document.getElementById('lastUpdated').textContent = new Date().toLocaleString();
+                
+                // Process responses
+                const [
+                    totalUsersData,
+                    totalFoldersData,
+                    totalPublicFoldersData,
+                    totalPrivateFoldersData,
+                    totalFilesData,
+                    totalStorageData,
+                    avgFilesPerFolderData,
+                    topUsersByFoldersData,
+                    topUsersByFilesData,
+                    recentUploadsData
+                ] = responses;
+                
+                // Update UI with data
+                updateUIWithData({
+                    totalUsersData,
+                    totalFoldersData,
+                    totalPublicFoldersData,
+                    totalPrivateFoldersData,
+                    totalFilesData,
+                    totalStorageData,
+                    avgFilesPerFolderData,
+                    topUsersByFoldersData,
+                    topUsersByFilesData,
+                    recentUploadsData
+                });
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                alert('Failed to load dashboard data. Please try again later.');
+            }
+        }
+        
+        // Function to update UI elements with fetched data
+        function updateUIWithData(data) {
+            // Basic stats
+            if (data.totalUsersData) {
+                document.getElementById('totalUsers').textContent = data.totalUsersData.totalUsers.toLocaleString();
+            }
+            
+            if (data.totalFoldersData) {
+                document.getElementById('totalFolders').textContent = data.totalFoldersData.totalFolders.toLocaleString();
+            }
+            
+            if (data.totalFilesData) {
+                document.getElementById('totalFiles').textContent = data.totalFilesData.totalFiles.toLocaleString();
+            }
+            
+            if (data.totalStorageData) {
+                const bytes = data.totalStorageData.totalStorage;
+                document.getElementById('totalStorage').textContent = formatBytes(bytes);
+                document.getElementById('storageSizeFormatted').textContent = formatBytes(bytes);
+                
+                // Calculate average file size if we have both stats
+                if (data.totalFilesData && data.totalFilesData.totalFiles > 0) {
+                    const avgSize = bytes / data.totalFilesData.totalFiles;
+                    document.getElementById('avgFileSize').textContent = formatBytes(avgSize);
+                } else {
+                    document.getElementById('avgFileSize').textContent = 'N/A';
+                }
+            }
+            
+            // Folder distribution
+            if (data.totalPublicFoldersData && data.totalPrivateFoldersData) {
+                const publicFolders = data.totalPublicFoldersData.totalPublicFolders;
+                const privateFolders = data.totalPrivateFoldersData.totalPrivateFolders;
+                
+                document.getElementById('totalPublicFolders').textContent = publicFolders.toLocaleString();
+                document.getElementById('totalPrivateFolders').textContent = privateFolders.toLocaleString();
+                
+                // Update progress bar
+                const total = publicFolders + privateFolders;
+                if (total > 0) {
+                    const publicPercentage = (publicFolders / total) * 100;
+                    document.getElementById('folderProgressBar').value = publicPercentage;
+                    document.getElementById('folderDistributionText').textContent = 
+                        `${publicPercentage.toFixed(1)}% Public / ${(100 - publicPercentage).toFixed(1)}% Private`;
+                } else {
+                    document.getElementById('folderProgressBar').value = 0;
+                    document.getElementById('folderDistributionText').textContent = 'No folders available';
+                }
+            }
+            
+            // Average files per folder
+            if (data.avgFilesPerFolderData) {
+                document.getElementById('averageFilesPerFolder').textContent = 
+                    data.avgFilesPerFolderData.averageFilesPerFolder.toFixed(1);
+            }
+            
+            // Recent uploads
+            if (data.recentUploadsData) {
+                document.getElementById('recentUploads').textContent = 
+                    data.recentUploadsData.recentUploads.toLocaleString();
+            }
+            
+            // Top users by folders
+            if (data.topUsersByFoldersData && data.topUsersByFoldersData.topUsersByFolders) {
+                const users = data.topUsersByFoldersData.topUsersByFolders;
+                const container = document.getElementById('topUsersByFolders');
+                container.innerHTML = '';
+                
+                if (users.length === 0) {
+                    container.innerHTML = '<p class="has-text-centered">No user data available</p>';
+                } else {
+                    users.forEach((user, index) => {
+                        const userItem = document.createElement('div');
+                        userItem.className = 'user-list-item';
+                        userItem.innerHTML = `
+                            <div>
+                                <span class="icon-text">
+                                    <span class="icon has-text-info">
+                                        <i class="fas fa-user-circle"></i>
+                                    </span>
+                                    <span class="has-text-weight-medium">${user.username}</span>
+                                </span>
+                            </div>
+                            <div>
+                                <span class="tag is-primary is-medium">${user.folderCount} folders</span>
+                            </div>
+                        `;
+                        container.appendChild(userItem);
+                    });
+                }
+            }
+            
+            // Top users by files
+            if (data.topUsersByFilesData && data.topUsersByFilesData.topUsersByFiles) {
+                const users = data.topUsersByFilesData.topUsersByFiles;
+                const container = document.getElementById('topUsersByFiles');
+                container.innerHTML = '';
+                
+                if (users.length === 0) {
+                    container.innerHTML = '<p class="has-text-centered">No user data available</p>';
+                } else {
+                    users.forEach((user, index) => {
+                        const userItem = document.createElement('div');
+                        userItem.className = 'user-list-item';
+                        userItem.innerHTML = `
+                            <div>
+                                <span class="icon-text">
+                                    <span class="icon has-text-info">
+                                        <i class="fas fa-user-circle"></i>
+                                    </span>
+                                    <span class="has-text-weight-medium">${user.username}</span>
+                                </span>
+                            </div>
+                            <div>
+                                <span class="tag is-success is-medium">${user.fileCount} files</span>
+                            </div>
+                        `;
+                        container.appendChild(userItem);
+                    });
+                }
+            }
+        }

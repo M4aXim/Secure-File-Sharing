@@ -1,0 +1,34 @@
+const p = new URLSearchParams(window.location.search);
+const folderID = p.get('folderID');
+const filename = p.get('filename');
+if (!folderID || !filename) {
+  document.body.innerHTML = '<p class="msg">Missing folderID or filename.</p>';
+  throw 'Missing params';
+}
+const ext = filename.split('.').pop().toLowerCase();
+if (ext === 'mp4') {
+  window.location.replace(
+    `mp4.html?folderID=${encodeURIComponent(folderID)}&filename=${encodeURIComponent(filename)}`
+  );
+} else if (ext === 'mp3') {
+  window.location.replace(
+    `mp3.html?folderID=${encodeURIComponent(folderID)}&filename=${encodeURIComponent(filename)}`
+  );
+} else if (ext === 'docx') {
+  window.location.replace(
+    `/view/word.html?folderID=${encodeURIComponent(folderID)}&filename=${encodeURIComponent(filename)}`
+  );
+} else if (ext === 'pdf') {
+  const fileURL = `/api/view-file/${folderID}/${encodeURIComponent(filename)}`;
+  window.open(fileURL, '_blank');
+  }
+else {
+  document.body.innerHTML = `
+  <div class="msg">
+    Unsupported type: <strong>.${ext}</strong><br>
+    Please use MP4, MP3, DOCX, or PDF.
+  </div>`;
+  setTimeout(() => {
+    window.history.back();
+  }, 2000);
+}
