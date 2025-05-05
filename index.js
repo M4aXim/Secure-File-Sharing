@@ -382,6 +382,29 @@ fastify.get('/api/download-file', async (req, reply) => {
   return reply.send(stream);
 });
 
+fastify.get('/api/unable-to-load/download-file', async (req, reply) => {
+  const { folderId, filename } = req.query;
+  if (!folderId || !filename) return reply.badRequest('Missing folderId or filename');
+
+  const key = `folders/${folderId}/${filename}`;
+
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key }));
+    const command  = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key });
+    const response = await s3.send(command);
+    const stream   = response.Body;
+
+    await logActivity(req, 'force-download-file-noauth', { folderId, filename });
+    reply.header('Content-Disposition', `attachment; filename="${filename}"`);
+    return reply.send(stream);
+  } catch {
+    return reply.notFound('File not found');
+  }
+});
+
+
+  
+
 // GET /api/open-file
 fastify.get('/api/open-file', async (req, reply) => {
   const { folderId, filename } = req.query;
@@ -1122,6 +1145,21 @@ fastify.post('/api/make-my-folder-public/:folderId', { preHandler: [fastify.auth
   return reply.send({ message: 'Folder is now public' });
 });
 
+fastify.post('/api/make-my-folder-private/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { folderId } = req.params;
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder = folders.find(f => f.folderId === folderId);
+  
+  if (!folder) return reply.notFound('Folder not found');
+  if (folder.owner !== req.user.username) return reply.forbidden('Only owner can make folder private');
+  
+  folder.isPublic = false;
+  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+  await logActivity(req, 'make-folder-private', { folderId });
+  
+  return reply.send({ message: 'Folder is now private' });
+});
+
 // --- CAT API ENDPOINT ---
 fastify.get('/api/curl/cats', async (req, reply) => {
   try {
@@ -1259,26 +1297,103 @@ fastify.get('/api/staff/stats/recent-uploads', { preHandler: [fastify.authentica
   }, 0);
   return { recentUploads: count };
 });
+  fastify.delete('/api/owner/delete-account', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { targetUsername, reason } = req.body;
+  
+  if (!targetUsername) {
+    return reply.badRequest('targetUsername is required');
+  }
+  
+  if (!reason || !['policy_violation', 'user_request'].includes(reason)) {
+    return reply.badRequest('Valid reason is required: "policy_violation" or "user_request"');
+  }
+  
+  // Check authorization: owner can delete any account, users can only delete their own
+  if (req.user.username !== OWNER_USERNAME && req.user.username !== targetUsername) {
+    return reply.forbidden('Only owner can delete other accounts');
+  }
+  
+  try {
+    // Find the user to delete
+    const user = await usersColl.findOne({ username: targetUsername });
+    if (!user) {
+      return reply.notFound('User not found');
+    }
+    
+    // Get all folders owned by the user
+    const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+    const userFolders = folders.filter(f => f.owner === targetUsername);
+    
+    // Delete all files from S3 for each folder
+    for (const folder of userFolders) {
+      const data = await s3.send(new ListObjectsV2Command({ 
+        Bucket: process.env.S3_BUCKET_NAME, 
+        Prefix: `folders/${folder.folderId}/` 
+      }));
+      
+      if (data.Contents && data.Contents.length > 0) {
+        for (const obj of data.Contents) {
+          await s3.send(new DeleteObjectCommand({ 
+            Bucket: process.env.S3_BUCKET_NAME, 
+            Key: obj.Key 
+          }));
+        }
+      }
+    }
+    
+    // Remove the user's folders from the folders.json file
+    const updatedFolders = folders.filter(f => f.owner !== targetUsername);
+    await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(updatedFolders, null, 2));
+    
+    // Remove user's permissions from other people's folders
+    for (const folder of updatedFolders) {
+      if (folder.friendPermissions && folder.friendPermissions[targetUsername]) {
+        delete folder.friendPermissions[targetUsername];
+      }
+      if (folder.invitedUsername === targetUsername) {
+        folder.invitedUsername = null;
+        folder.invitationId = null;
+      }
+    }
+    await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(updatedFolders, null, 2));
+    
+    // Delete the user from the database
+    await usersColl.deleteOne({ username: targetUsername });
+    
+    // Log the account deletion
+    await logActivity(req, 'delete-account', { 
+      targetUsername, 
+      reason, 
+      deletedBy: req.user.username,
+      foldersRemoved: userFolders.length
+    });
+    
+    return reply.send({ 
+      message: 'Account deleted successfully', 
+      username: targetUsername, 
+      foldersRemoved: userFolders.length 
+    });
+  } catch (err) {
+    fastify.log.error('Error deleting account:', err);
+    return reply.internalServerError('Failed to delete account');
+  }
+});
 
-
-// --- SPA fallback for non-API routes ---
 fastify.setNotFoundHandler((req, reply) => {
   if (req.raw.url.startsWith('/api/')) {
     return reply.callNotFound();
   }
-  return reply.sendFile('index.html');
+
+  // “Pretty” SPA routes without an extension → feed the SPA
+  const hasExt = path.extname(req.raw.url) !== '';
+  if (!hasExt) {
+    return reply.sendFile('index.html');
+  }
+
+  // Everything else (missing asset, bad URL, etc.) → custom 404 page
+  return reply.code(404).type('text/html').sendFile('404.html');
 });
 
-// --- Custom 404 page for remaining 404s ---
-fastify.setErrorHandler((error, req, reply) => {
-  if (error.statusCode === 404 && !req.raw.url.startsWith('/api/')) {
-    return reply
-      .code(404)
-      .type('text/html')
-      .sendFile('404.html');
-  }
-  return reply.send(error);
-});
 
 // --- STARTUP ---
 const start = async () => {

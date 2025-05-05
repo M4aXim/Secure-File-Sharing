@@ -15,6 +15,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!response.ok) {
         localStorage.removeItem('jwtToken');
         window.location.href = '/index.html';
+      } else {
+        // Check if user is staff member
+        checkUserRole();
       }
     })
     .catch(() => {
@@ -244,4 +247,33 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('generalPasswordError').style.display = 'block';
       console.error(error);
     }
+  }
+
+  // Check user role to show/hide staff button
+  async function checkUserRole() {
+    const token = localStorage.getItem('jwtToken');
+    if (!token) return;
+    
+    try {
+      const response = await fetch('http://localhost:3000/api/check-role', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.role === 'staff') {
+          // Show staff button if user is a staff member
+          document.getElementById('staffNav').style.display = 'flex';
+        }
+      }
+    } catch (error) {
+      console.error('Error checking user role:', error);
+    }
+  }
+  
+  // Navigate to staff dashboard
+  function goToStaffDashboard() {
+    window.location.href = '/staff/Hello.html';
   }
