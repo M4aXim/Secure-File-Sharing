@@ -950,14 +950,81 @@ fastify.delete('/api/staff/folders/:folderId', { preHandler: [fastify.authentica
 // View user details (staff)
 fastify.get('/api/staff/users/:username', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const { username } = req.params;
+  
+  // Get user details
   const user = await usersColl.findOne({ username }, { projection: { password: 0 } });
   if (!user) return reply.notFound('User not found');
+  
+  // Get folders owned by this user
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const ownedFolders = folders.filter(f => f.owner === username).map(f => ({
+    folderId: f.folderId,
+    folderName: f.folderName,
+    isPublic: f.isPublic || false,
+    createdAt: f.createdAt,
+    friendCount: Object.keys(f.friendPermissions || {}).length
+  }));
+  
+  // Get folders shared with this user
+  const sharedFolders = folders.filter(f => 
+    f.friendPermissions && f.friendPermissions[username]
+  ).map(f => ({
+    folderId: f.folderId,
+    folderName: f.folderName,
+    owner: f.owner,
+    permissions: f.friendPermissions[username]
+  }));
+  
+  // Get pending invitations for this user
+  const pendingInvitations = folders
+    .filter(f => f.invitedUsername === username && f.invitationId)
+    .map(f => ({
+      folderId: f.folderId,
+      folderName: f.folderName,
+      owner: f.owner,
+      invitationId: f.invitationId
+    }));
+  
+  // Get recent activity
+  let recentActivity = [];
+  try {
+    const raw = await fsPromises.readFile(AUDIT_LOG, 'utf8');
+    recentActivity = raw
+      .split('\n')
+      .filter(line => line.includes(`"user":"${username}"`))
+      .map(line => { try { return JSON.parse(line); } catch { return null; } })
+      .filter(Boolean)
+      .slice(-20); // Last 20 activities
+  } catch (err) {
+    fastify.log.error('Error reading audit log:', err);
+  }
+  
   await logActivity(req, 'staff-view-user', { username });
+  
   return {
+    // Basic user info
     username: user.username,
-    email:    user.email,
-    role:     user.role,
-    createdAt:user.createdAt
+    email: user.email,
+    role: user.role,
+    createdAt: user.createdAt,
+    
+    // Additional details
+    lastActivity: recentActivity.length > 0 ? recentActivity[recentActivity.length - 1].timestamp : null,
+    
+    // Content stats
+    stats: {
+      ownedFolderCount: ownedFolders.length,
+      sharedFolderCount: sharedFolders.length,
+      pendingInvitationCount: pendingInvitations.length
+    },
+    
+    // Folders data
+    ownedFolders,
+    sharedFolders,
+    pendingInvitations,
+    
+    // Recent activity
+    recentActivity
   };
 });
 
@@ -998,6 +1065,28 @@ fastify.get('/api/staff/audit-log', { preHandler: [fastify.authenticate, fastify
 fastify.get('/api/staff/get-for-all-folders-ID', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (_req, reply) => {
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
   return { folders: folders.map(f => ({ folderId: f.folderId, owner: f.owner })) };
+});
+
+// GET /api/staff/folder-contents
+fastify.get('/api/staff/folder-contents', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const folderId = req.query.folderId;
+  if (!folderId) return reply.badRequest('folderId is required');
+  
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder  = folders.find(f => f.folderId === folderId);
+  if (!folder) return reply.notFound('Folder not found');
+
+  const data = await s3.send(new ListObjectsV2Command({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Prefix: `folders/${folderId}/`
+  }));
+
+  return (data.Contents || []).map(obj => ({
+    filename:     obj.Key.slice(`folders/${folderId}/`.length),
+    size:         obj.Size,
+    lastModified: obj.LastModified,
+    type:         path.extname(obj.Key)
+  }));
 });
 
 // Check role

@@ -3,58 +3,945 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Staff – Lookup User</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <title>Staff Portal - User Lookup</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --primary: #4361ee;
+      --primary-light: #4895ef;
+      --success: #4cc9f0;
+      --danger: #f72585;
+      --warning: #ffd166;
+      --dark: #2b2d42;
+      --medium: #8d99ae;
+      --light: #edf2f4;
+      --white: #ffffff;
+      --border-radius: 8px;
+      --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      --transition: all 0.3s ease;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    body {
+      background-color: #f5f7fa;
+      color: var(--dark);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .navbar {
+      background-color: var(--white);
+      padding: 1rem 2rem;
+      box-shadow: var(--shadow);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .navbar-brand {
+      font-size: 1.5rem;
+      font-weight: bold;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 3rem;
+      flex: 1;
+    }
+    
+    .card {
+      width: 100%;
+      max-width: 1360px;
+      margin: 0 auto 2rem;
+    }
+    
+    .card-header {
+      background-color: var(--primary);
+      color: var(--white);
+      padding: 1.5rem;
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+    
+    .card-body {
+      padding: 1.5rem;
+    }
+    
+    .search-form {
+      margin-bottom: 1.5rem;
+    }
+    
+    .form-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 1rem;
+    }
+    
+    .input-group {
+      flex: 1;
+      position: relative;
+    }
+    
+    .input-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--medium);
+    }
+    
+    input {
+      width: 100%;
+      padding: 12px 12px 12px 40px;
+      border: 1px solid #ddd;
+      border-radius: var(--border-radius);
+      font-size: 1rem;
+      transition: var(--transition);
+    }
+    
+    input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(67, 97, 238, 0.15);
+    }
+    
+    button {
+      background-color: var(--primary);
+      color: var(--white);
+      border: none;
+      border-radius: var(--border-radius);
+      padding: 12px 20px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    button:hover {
+      background-color: var(--primary-light);
+    }
+    
+    .result-box {
+      background-color: var(--light);
+      border-radius: var(--border-radius);
+      padding: 1.5rem;
+    }
+    
+    .user-card {
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .user-info {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .user-avatar {
+      width: 100px;
+      height: 100px;
+      background-color: var(--primary-light);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--white);
+      font-size: 2.5rem;
+      font-weight: bold;
+    }
+    
+    .user-details {
+      flex: 1;
+      min-width: 250px;
+    }
+    
+    .user-name {
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem;
+      color: var(--dark);
+    }
+    
+    .user-meta {
+      color: var(--medium);
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+    
+    .badge {
+      display: inline-block;
+      padding: 5px 10px;
+      background-color: var(--primary-light);
+      color: var(--white);
+      border-radius: 50px;
+      font-size: 0.85rem;
+      margin-right: 0.5rem;
+    }
+    
+    .badge-staff {
+      background-color: var(--success);
+    }
+    
+    .user-data {
+      margin-top: 1.5rem;
+    }
+    
+    .data-row {
+      display: flex;
+      margin-bottom: 0.8rem;
+      padding-bottom: 0.8rem;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .data-label {
+      width: 150px;
+      font-weight: 500;
+      color: var(--medium);
+    }
+    
+    .data-value {
+      flex: 1;
+      color: var(--dark);
+    }
+    
+    .json-view {
+      background-color: #f8f9fa;
+      padding: 1rem;
+      border-radius: var(--border-radius);
+      border: 1px solid #eee;
+      font-family: monospace;
+      max-height: 500px;
+      overflow: auto;
+      margin-top: 1rem;
+    }
+    
+    .tabs {
+      display: flex;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .tab {
+      padding: 0.8rem 1.2rem;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: var(--transition);
+    }
+    
+    .tab.active {
+      border-bottom-color: var(--primary);
+      color: var(--primary);
+      font-weight: 500;
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
+    .empty-state {
+      padding: 3rem 1rem;
+      text-align: center;
+      color: var(--medium);
+    }
+    
+    .empty-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      color: #ddd;
+    }
+    
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 2rem;
+      color: var(--medium);
+    }
+    
+    .spinner {
+      display: inline-block;
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(0, 0, 0, 0.1);
+      border-left-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .error-message {
+      background-color: #fdeded;
+      color: var(--danger);
+      padding: 1rem;
+      border-radius: var(--border-radius);
+      border-left: 4px solid var(--danger);
+      margin-bottom: 1rem;
+      display: none;
+    }
+
+    .stat-cards {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      margin-bottom: 1.5rem;
+    }
+
+    .stat-card {
+      background-color: var(--white);
+      border-radius: var(--border-radius);
+      padding: 1.2rem;
+      box-shadow: var(--shadow);
+      flex: 1;
+      min-width: 180px;
+      text-align: center;
+    }
+
+    .stat-card-icon {
+      font-size: 2rem;
+      margin-bottom: 0.8rem;
+      color: var(--primary);
+    }
+
+    .stat-card-value {
+      font-size: 1.8rem;
+      font-weight: bold;
+      margin-bottom: 0.3rem;
+      color: var(--dark);
+    }
+
+    .stat-card-label {
+      color: var(--medium);
+      font-size: 0.9rem;
+    }
+
+    .folder-list {
+      margin-top: 1.5rem;
+    }
+
+    .folder-item {
+      background-color: var(--white);
+      border-radius: var(--border-radius);
+      padding: 1rem;
+      margin-bottom: 0.8rem;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .folder-name {
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .folder-meta {
+      color: var(--medium);
+      font-size: 0.9rem;
+    }
+
+    .folder-badge {
+      padding: 3px 8px;
+      border-radius: 50px;
+      font-size: 0.75rem;
+      background-color: var(--light);
+      color: var(--medium);
+    }
+
+    .folder-badge-public {
+      background-color: var(--success);
+      color: var(--white);
+    }
+
+    .folder-badge-private {
+      background-color: var(--medium);
+      color: var(--white);
+    }
+
+    .activity-log {
+      margin-top: 1.5rem;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .activity-item {
+      padding: 0.8rem;
+      border-left: 3px solid var(--primary);
+      background-color: var(--white);
+      margin-bottom: 0.8rem;
+      border-radius: 0 var(--border-radius) var(--border-radius) 0;
+    }
+
+    .activity-time {
+      color: var(--medium);
+      font-size: 0.8rem;
+      margin-bottom: 0.3rem;
+    }
+
+    .activity-action {
+      font-weight: 500;
+    }
+
+    .activity-details {
+      color: var(--medium);
+      font-size: 0.9rem;
+      margin-top: 0.3rem;
+    }
+
+    @media (max-width: 768px) {
+      .form-group {
+        flex-direction: column;
+      }
+      
+      .navbar {
+        padding: 1rem;
+      }
+      
+      .container {
+        padding: 1rem;
+        max-width: 100%;
+      }
+      
+      .card {
+        max-width: 100%;
+      }
+
+      .stat-cards {
+        flex-direction: column;
+      }
+
+      .stat-card {
+        min-width: 100%;
+      }
+    }
+  </style>
 </head>
 <body>
-  <section class="section">
-    <div class="container">
-      <h1 class="title is-3">Lookup User</h1>
-      
-      <form id="form" class="mb-5">
-        <div class="field has-addons">
-          <div class="control has-icons-left is-expanded">
-            <input class="input" type="text" id="username" placeholder="Enter username" required />
-            <span class="icon is-small is-left">
-              <i class="fas fa-user"></i>
-            </span>
-          </div>
-          <div class="control">
-            <button type="submit" class="button is-primary">
-              <span class="icon">
-                <i class="fas fa-search"></i>
-              </span>
-              <span>Fetch</span>
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <i class="fas fa-shield-alt"></i>
+      <span>Staff lookup user</span>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="card">
+      <div class="card-header">
+        User Lookup
+      </div>
+      <div class="card-body">
+        <div class="error-message" id="error-message">
+          <i class="fas fa-exclamation-circle"></i>
+          <span id="error-text"></span>
+        </div>
+        
+        <form id="search-form" class="search-form">
+          <div class="form-group">
+            <div class="input-group">
+              <i class="fas fa-user input-icon"></i>
+              <input 
+                type="text" 
+                id="username" 
+                placeholder="Enter username to search" 
+                required
+                autocomplete="off"
+              />
+            </div>
+            <button type="submit" id="search-button">
+              <i class="fas fa-search"></i>
+              <span>Search</span>
             </button>
           </div>
+        </form>
+        
+        <div class="loading" id="loading">
+          <div class="spinner"></div>
+          <div>Loading user data...</div>
         </div>
-      </form>
-      
-      <div class="box">
-        <pre id="output" class="has-background-light p-4" style="border-radius: 4px; max-height: 500px; overflow: auto;"></pre>
+
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">
+            <i class="fas fa-search"></i>
+          </div>
+          <h3>Search for a user</h3>
+          <p>Enter a username above to view user details</p>
+        </div>
+
+        <div class="user-card" id="user-card">
+          <div class="user-info">
+            <div class="user-avatar" id="user-avatar"></div>
+            <div class="user-details">
+              <h2 class="user-name" id="user-name"></h2>
+              <div class="user-meta" id="user-meta"></div>
+              <div>
+                <span class="badge" id="user-role"></span>
+                <span id="last-activity"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="stat-cards" id="stat-cards">
+            <div class="stat-card">
+              <div class="stat-card-icon">
+                <i class="fas fa-folder"></i>
+              </div>
+              <div class="stat-card-value" id="owned-folders-count">0</div>
+              <div class="stat-card-label">Owned Folders</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon">
+                <i class="fas fa-share-alt"></i>
+              </div>
+              <div class="stat-card-value" id="shared-folders-count">0</div>
+              <div class="stat-card-label">Shared Folders</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon">
+                <i class="fas fa-envelope"></i>
+              </div>
+              <div class="stat-card-value" id="pending-invitations-count">0</div>
+              <div class="stat-card-label">Pending Invitations</div>
+            </div>
+          </div>
+
+          <div class="tabs">
+            <div class="tab active" data-tab="details">Details</div>
+            <div class="tab" data-tab="folders">Folders</div>
+            <div class="tab" data-tab="activity">Activity</div>
+            <div class="tab" data-tab="json">JSON Data</div>
+          </div>
+
+          <div class="tab-content active" data-tab-content="details">
+            <div class="user-data">
+              <div class="data-row">
+                <div class="data-label">Username</div>
+                <div class="data-value" id="detail-username"></div>
+              </div>
+              <div class="data-row">
+                <div class="data-label">Email</div>
+                <div class="data-value" id="detail-email"></div>
+              </div>
+              <div class="data-row">
+                <div class="data-label">Role</div>
+                <div class="data-value" id="detail-role"></div>
+              </div>
+              <div class="data-row">
+                <div class="data-label">Created</div>
+                <div class="data-value" id="detail-created"></div>
+              </div>
+              <div class="data-row">
+                <div class="data-label">Last Activity</div>
+                <div class="data-value" id="detail-last-activity">Never</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-content" data-tab-content="folders">
+            <h3>Owned Folders</h3>
+            <div class="folder-list" id="owned-folders-list">
+              <div class="empty-state">
+                <p>No owned folders found</p>
+              </div>
+            </div>
+
+            <h3>Shared Folders</h3>
+            <div class="folder-list" id="shared-folders-list">
+              <div class="empty-state">
+                <p>No shared folders found</p>
+              </div>
+            </div>
+
+            <h3>Pending Invitations</h3>
+            <div class="folder-list" id="pending-invitations-list">
+              <div class="empty-state">
+                <p>No pending invitations found</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-content" data-tab-content="activity">
+            <div class="activity-log" id="activity-log">
+              <div class="empty-state">
+                <p>No recent activity found</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="tab-content" data-tab-content="json">
+            <pre class="json-view" id="json-view"></pre>
+          </div>
+        </div>
       </div>
     </div>
-  </section>
+  </div>
 
   <script>
-    (async function(){
+    (async function() {
+      // Get token from localStorage or prompt
       const token = localStorage.getItem('jwtToken') || prompt('Enter JWT token');
-      document.getElementById('form').onsubmit = async e => {
-        e.preventDefault();
-        const username = document.getElementById('username').value.trim();
-        try {
-          const res = await fetch(`/api/staff/users/${username}`, {
-            headers: { 'Authorization': 'Bearer ' + token }
-          });
-          if (!res.ok) throw new Error(await res.text());
-          const data = await res.json();
-          document.getElementById('output').textContent = JSON.stringify(data, null, 2);
-        } catch (err) {
-          document.getElementById('output').textContent = 'Error: ' + err.message;
+      if (token) {
+        localStorage.setItem('jwtToken', token);
+      }
+      
+      // DOM elements
+      const searchForm = document.getElementById('search-form');
+      const usernameInput = document.getElementById('username');
+      const searchButton = document.getElementById('search-button');
+      const loadingEl = document.getElementById('loading');
+      const emptyStateEl = document.getElementById('empty-state');
+      const userCardEl = document.getElementById('user-card');
+      const errorMessageEl = document.getElementById('error-message');
+      const errorTextEl = document.getElementById('error-text');
+      
+      // User detail elements
+      const userAvatarEl = document.getElementById('user-avatar');
+      const userNameEl = document.getElementById('user-name');
+      const userMetaEl = document.getElementById('user-meta');
+      const userRoleEl = document.getElementById('user-role');
+      const lastActivityEl = document.getElementById('last-activity');
+      const detailUsernameEl = document.getElementById('detail-username');
+      const detailEmailEl = document.getElementById('detail-email');
+      const detailRoleEl = document.getElementById('detail-role');
+      const detailCreatedEl = document.getElementById('detail-created');
+      const detailLastActivityEl = document.getElementById('detail-last-activity');
+      const jsonViewEl = document.getElementById('json-view');
+      
+      // Stats elements
+      const ownedFoldersCountEl = document.getElementById('owned-folders-count');
+      const sharedFoldersCountEl = document.getElementById('shared-folders-count');
+      const pendingInvitationsCountEl = document.getElementById('pending-invitations-count');
+      
+      // Folders elements
+      const ownedFoldersListEl = document.getElementById('owned-folders-list');
+      const sharedFoldersListEl = document.getElementById('shared-folders-list');
+      const pendingInvitationsListEl = document.getElementById('pending-invitations-list');
+      
+      // Activity log element
+      const activityLogEl = document.getElementById('activity-log');
+      
+      // Tab functionality
+      const tabs = document.querySelectorAll('.tab');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          // Remove active class from all tabs and contents
+          tabs.forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+          
+          // Add active class to clicked tab and corresponding content
+          tab.classList.add('active');
+          const tabName = tab.getAttribute('data-tab');
+          document.querySelector(`.tab-content[data-tab-content="${tabName}"]`).classList.add('active');
+        });
+      });
+      
+      // Format date function
+      function formatDate(dateString) {
+        if (!dateString) return 'Never';
+        const date = new Date(dateString);
+        const options = { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+        return date.toLocaleDateString('en-US', options);
+      }
+      
+      // Format relative time
+      function formatRelativeTime(dateString) {
+        if (!dateString) return '';
+        
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffSeconds = Math.floor((now - date) / 1000);
+        
+        if (diffSeconds < 60) {
+          return 'just now';
+        } else if (diffSeconds < 3600) {
+          const minutes = Math.floor(diffSeconds / 60);
+          return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+        } else if (diffSeconds < 86400) {
+          const hours = Math.floor(diffSeconds / 3600);
+          return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+        } else if (diffSeconds < 604800) {
+          const days = Math.floor(diffSeconds / 86400);
+          return `${days} day${days > 1 ? 's' : ''} ago`;
+        } else {
+          return formatDate(dateString);
         }
-      };
-    })();
+      }
+      
+      // Generate avatar initial from username
+      function getInitial(username) {
+        return username.charAt(0).toUpperCase();
+      }
+      
+      // Show error message
+      function showError(message) {
+        errorTextEl.textContent = message;
+        errorMessageEl.style.display = 'block';
+        setTimeout(() => {
+          errorMessageEl.style.display = 'none';
+        }, 5000);
+      }
+      
+      // Reset UI state
+      function resetUI() {
+        loadingEl.style.display = 'none';
+        userCardEl.style.display = 'none';
+        emptyStateEl.style.display = 'block';
+        errorMessageEl.style.display = 'none';
+      }
+      
+      // Render owned folders
+      function renderOwnedFolders(folders) {
+        if (!folders || folders.length === 0) {
+          ownedFoldersListEl.innerHTML = '<div class="empty-state"><p>No owned folders found</p></div>';
+          return;
+        }
+        
+        ownedFoldersListEl.innerHTML = '';
+        folders.forEach(folder => {
+          const folderEl = document.createElement('div');
+          folderEl.className = 'folder-item';
+          folderEl.innerHTML = `
+            <div>
+              <div class="folder-name">
+                <i class="fas fa-folder"></i>
+                ${folder.folderName}
+                <span class="folder-badge ${folder.isPublic ? 'folder-badge-public' : 'folder-badge-private'}">
+                  ${folder.isPublic ? 'Public' : 'Private'}
+                </span>
+              </div>
+              <div class="folder-meta">
+                Created: ${formatDate(folder.createdAt)} | Friends: ${folder.friendCount || 0}
+              </div>
+            </div>
+            <div>
+              <span class="folder-meta">ID: ${folder.folderId}</span>
+            </div>
+          `;
+          ownedFoldersListEl.appendChild(folderEl);
+        });
+      }
+      
+      // Render shared folders
+      function renderSharedFolders(folders) {
+        if (!folders || folders.length === 0) {
+          sharedFoldersListEl.innerHTML = '<div class="empty-state"><p>No shared folders found</p></div>';
+          return;
+        }
+        
+        sharedFoldersListEl.innerHTML = '';
+        folders.forEach(folder => {
+          const folderEl = document.createElement('div');
+          folderEl.className = 'folder-item';
+          folderEl.innerHTML = `
+            <div>
+              <div class="folder-name">
+                <i class="fas fa-folder-open"></i>
+                ${folder.folderName}
+              </div>
+              <div class="folder-meta">
+                Owner: ${folder.owner} | Permissions: ${folder.permissions}
+              </div>
+            </div>
+            <div>
+              <span class="folder-meta">ID: ${folder.folderId}</span>
+            </div>
+          `;
+          sharedFoldersListEl.appendChild(folderEl);
+        });
+      }
+      
+      // Render pending invitations
+      function renderPendingInvitations(invitations) {
+        if (!invitations || invitations.length === 0) {
+          pendingInvitationsListEl.innerHTML = '<div class="empty-state"><p>No pending invitations found</p></div>';
+          return;
+        }
+        
+        pendingInvitationsListEl.innerHTML = '';
+        invitations.forEach(invitation => {
+          const invitationEl = document.createElement('div');
+          invitationEl.className = 'folder-item';
+          invitationEl.innerHTML = `
+            <div>
+              <div class="folder-name">
+                <i class="fas fa-envelope"></i>
+                ${invitation.folderName}
+              </div>
+              <div class="folder-meta">
+                From: ${invitation.owner}
+              </div>
+            </div>
+            <div>
+              <span class="folder-meta">Invitation ID: ${invitation.invitationId}</span>
+            </div>
+          `;
+          pendingInvitationsListEl.appendChild(invitationEl);
+        });
+      }
+      
+      // Render activity log
+// Render activity log
+function renderActivityLog(activities) {
+  if (!activities || activities.length === 0) {
+    activityLogEl.innerHTML = '<div class="empty-state"><p>No recent activity found</p></div>';
+    return;
+  }
+  
+  activityLogEl.innerHTML = '';
+  activities.forEach(activity => {
+    const activityEl = document.createElement('div');
+    activityEl.className = 'activity-item';
+    
+    // Determine icon based on activity type
+    let actionIcon = 'fa-circle';
+    const activityType = activity.activity || activity.action;
+    
+    if (activityType) {
+      if (activityType.includes('login')) actionIcon = 'fa-sign-in-alt';
+      if (activityType.includes('folder')) actionIcon = 'fa-folder';
+      if (activityType.includes('file')) actionIcon = 'fa-file';
+      if (activityType.includes('share')) actionIcon = 'fa-share-alt';
+      if (activityType.includes('invite')) actionIcon = 'fa-envelope';
+      if (activityType.includes('delete')) actionIcon = 'fa-trash';
+    }
+    
+    // Use the correct field names from the API response
+    const timestamp = activity.timestamp;
+    const action = activity.activity || activity.action;
+    
+    // Format the details as needed
+    let details = '';
+    if (activity.folderId) {
+      details += `Folder ID: ${activity.folderId}`;
+    }
+    if (activity.filename) {
+      details += details ? ' | ' : '';
+      details += `File: ${activity.filename}`;
+    }
+    if (activity.ip) {
+      details += details ? ' | ' : '';
+      details += `IP: ${activity.ip}`;
+    }
+    
+    activityEl.innerHTML = `
+      <div class="activity-time">${formatDate(timestamp)}</div>
+      <div class="activity-action">
+        <i class="fas ${actionIcon}"></i>
+        ${action}
+      </div>
+      ${details ? `<div class="activity-details">${details}</div>` : ''}
+    `;
+    activityLogEl.appendChild(activityEl);
+  });
+}
+
+      
+      // Handle form submission
+      searchForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const username = usernameInput.value.trim();
+        if (!username) return;
+        
+        // Update UI state
+        errorMessageEl.style.display = 'none';
+        emptyStateEl.style.display = 'none';
+        userCardEl.style.display = 'none';
+        loadingEl.style.display = 'block';
+        
+        try {
+          const response = await fetch(`/api/staff/users/${username}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || `Failed to fetch user: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          // Update basic user info
+          userAvatarEl.textContent = getInitial(data.username);
+          userNameEl.textContent = data.username;
+          userMetaEl.textContent = `Joined on ${formatDate(data.createdAt)}`;
+          userRoleEl.textContent = data.role;
+          
+          if (data.lastActivity) {
+            lastActivityEl.textContent = `Last seen ${formatRelativeTime(data.lastActivity)}`;
+          } else {
+            lastActivityEl.textContent = '';
+          }
+          
+          // Update user details
+          detailUsernameEl.textContent = data.username;
+          detailEmailEl.textContent = data.email;
+          detailRoleEl.textContent = data.role;
+          detailCreatedEl.textContent = formatDate(data.createdAt);
+          detailLastActivityEl.textContent = data.lastActivity ? formatDate(data.lastActivity) : 'Never';
+          
+          // Update stats
+          ownedFoldersCountEl.textContent = data.stats.ownedFolderCount;
+          sharedFoldersCountEl.textContent = data.stats.sharedFolderCount;
+          pendingInvitationsCountEl.textContent = data.stats.pendingInvitationCount;
+          
+          // Render folders
+          renderOwnedFolders(data.ownedFolders);
+          renderSharedFolders(data.sharedFolders);
+          renderPendingInvitations(data.pendingInvitations);
+          
+          // Render activity log
+          renderActivityLog(data.recentActivity);
+          
+          // Update JSON view
+          jsonViewEl.textContent = JSON.stringify(data, null, 2);
+            
+  // Show user card
+  loadingEl.style.display = 'none';
+  userCardEl.style.display = 'block';
+  
+} catch (error) {
+  console.error('Error:', error);
+  loadingEl.style.display = 'none';
+  emptyStateEl.style.display = 'block';
+  showError(error.message || 'Failed to fetch user data');
+}
+  });
+  
+  // Initialize the page
+  resetUI();
+  
+  // Focus the username input
+  usernameInput.focus();
+})();
   </script>
 </body>
 </html>
