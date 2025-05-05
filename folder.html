@@ -207,6 +207,10 @@
               <span class="icon"><i class="fas fa-user-cog"></i></span>
               <span>Change Permission</span>
             </button>
+            <button class="button is-success is-small" id="makePublicButton">
+              <span class="icon"><i class="fas fa-globe"></i></span>
+              <span>Make Public</span>
+            </button>
           </div>
           <div class="field has-addons">
             <div class="control">
@@ -256,55 +260,80 @@
   </footer>
 
   <script>
-    // Auth check on load
-    document.addEventListener('DOMContentLoaded', () => {
-      const token = localStorage.getItem('jwtToken');
-      if (!token) {
-        return window.location.href = '/index.html';
+    // Auth & Public Check + Initial Load
+    document.addEventListener('DOMContentLoaded', async () => {
+      const token       = localStorage.getItem('jwtToken');
+      const urlParams   = new URLSearchParams(window.location.search);
+      const folderId    = urlParams.get('folderID');
+      if (!folderId) {
+        window.location.href = '/dashboard.html';
+        return;
       }
-      fetch('http://localhost:3000/api/verify-token', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      }).then(res => {
-        if (!res.ok) {
+      folderIdSpan.textContent = folderId;
+  
+      // 1) Check if the folder is public
+      let isPublic = false;
+      try {
+        const publicCheckRes = await fetch(`/api/is-folder-public/${folderId}`);
+        const publicData     = await publicCheckRes.json();
+        isPublic = publicData.isPublic;
+      } catch (err) {
+        console.error('Public check failed', err);
+      }
+  
+      // 2) If not public, require authentication & token verification
+      if (!isPublic) {
+        if (!token) {
+          window.location.href = '/index.html';
+          return;
+        }
+        try {
+          const verifyRes = await fetch('/api/verify-token', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!verifyRes.ok) {
+            localStorage.removeItem('jwtToken');
+            window.location.href = '/index.html';
+            return;
+          }
+        } catch (err) {
+          console.error('Token verify failed', err);
           localStorage.removeItem('jwtToken');
           window.location.href = '/index.html';
+          return;
         }
-      }).catch(() => {
-        localStorage.removeItem('jwtToken');
-        window.location.href = '/index.html';
-      });
+      }
+  
+      // 3) After passing public/auth check, load folder contents & ownership
+      checkOwnership();
+      fetchFolderContents();
     });
-
+  
     // DOM refs
-    const fileInput        = document.getElementById('fileInput');
-    const fileNameDisplay  = document.getElementById('fileName');
-    const uploadButton     = document.getElementById('uploadButton');
-    const dropZone         = document.getElementById('dropZone');
-    const folderContentsDiv= document.getElementById('folderContents');
-    const folderIdSpan     = document.getElementById('folderId');
-    const progressContainer= document.getElementById('progressContainer');
-    const uploadProgress   = document.getElementById('uploadProgress');
-    const progressText     = document.getElementById('progressText');
-    const loadingSpinner   = document.getElementById('loadingSpinner');
-    const refreshButton    = document.getElementById('refreshButton');
-    const searchInput      = document.getElementById('searchInput');
-    const notification     = document.getElementById('notificationSuccess');
-    const notificationText = document.getElementById('notificationText');
-    const closeNotification= document.getElementById('closeNotification');
-
-    // Get folderID
-    const urlParams = new URLSearchParams(window.location.search);
-    const folderId  = urlParams.get('folderID');
-    if (!folderId) {
-      window.location.href = '/dashboard.html';
-      throw new Error('No folder ID provided');
-    }
-    folderIdSpan.textContent = folderId;
-
+    const fileInput              = document.getElementById('fileInput');
+    const fileNameDisplay        = document.getElementById('fileName');
+    const uploadButton           = document.getElementById('uploadButton');
+    const dropZone               = document.getElementById('dropZone');
+    const folderContentsDiv      = document.getElementById('folderContents');
+    const folderIdSpan           = document.getElementById('folderId');
+    const progressContainer      = document.getElementById('progressContainer');
+    const uploadProgress         = document.getElementById('uploadProgress');
+    const progressText           = document.getElementById('progressText');
+    const loadingSpinner         = document.getElementById('loadingSpinner');
+    const refreshButton          = document.getElementById('refreshButton');
+    const searchInput            = document.getElementById('searchInput');
+    const notification           = document.getElementById('notificationSuccess');
+    const notificationText       = document.getElementById('notificationText');
+    const closeNotification      = document.getElementById('closeNotification');
+    const changePermissionButton = document.getElementById('changePermissionButton');
+    const makePublicButton       = document.getElementById('makePublicButton');
+  
     // Helpers
     function formatFileSize(bytes) {
       if (!bytes) return '0 Bytes';
-      const k = 1024, sizes = ['Bytes','KB','MB','GB','TB'], i = Math.floor(Math.log(bytes)/Math.log(k));
+      const k = 1024,
+            sizes = ['Bytes','KB','MB','GB','TB'],
+            i = Math.floor(Math.log(bytes)/Math.log(k));
       return `${(bytes/Math.pow(k,i)).toFixed(2)} ${sizes[i]}`;
     }
     function formatDate(d) {
@@ -331,22 +360,23 @@
     closeNotification.addEventListener('click', () => {
       notification.classList.remove('show');
     });
-
-    // Fetch & render
+  
+    // Fetch & render folder contents
     async function fetchFolderContents() {
       const token = localStorage.getItem('jwtToken');
-      if (!token) return window.location.href = '/index.html';
-
+      // (no unconditional redirect here — initial check already took care of auth/public)
+      const folderId = folderIdSpan.textContent;
+  
       loadingSpinner.style.display = 'block';
       folderContentsDiv.innerHTML = '';
-
+  
       try {
-        const res = await fetch(`http://localhost:3000/api/folder-contents?folderID=${folderId}`, {
+        const res = await fetch(`/api/folder-contents?folderID=${encodeURIComponent(folderId)}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const contents = await res.json();
         loadingSpinner.style.display = 'none';
-
+  
         if (!res.ok) {
           return folderContentsDiv.innerHTML = `<div class="notification is-warning">${contents.message||'Error loading'}</div>`;
         }
@@ -358,9 +388,9 @@
               <p class="is-size-7 has-text-grey">Upload files to get started</p>
             </div>`;
         }
-
+  
         const fileItems = contents.map((f,i) => {
-            const name = f.filename||`File${i}`, ext = f.type||'', size = formatFileSize(f.size), mod = formatDate(f.lastModified);
+          const name = f.filename||`File${i}`, ext = f.type||'', size = formatFileSize(f.size), mod = formatDate(f.lastModified);
           return `
             <div class="file-item">
               <div class="file-icon">
@@ -377,19 +407,18 @@
                 <button class="button is-small is-info download-button" data-filename="${name}">
                   <span class="icon"><i class="fas fa-download"></i></span>
                 </button>
-                <button class="button is-small is-primary view-button" data-filename="${name}">
+                <button class="button is-small is-primary view-button"    data-filename="${name}">
                   <span class="icon"><i class="fas fa-eye"></i></span>
                 </button>
-                <button class="button is-small is-danger delete-button" data-filename="${name}">
+                <button class="button is-small is-danger delete-button"  data-filename="${name}">
                   <span class="icon"><i class="fas fa-trash-alt"></i></span>
                 </button>
               </div>
             </div>`;
         }).join('');
-
+  
         folderContentsDiv.innerHTML = fileItems;
-
-        // now bind events
+  
         document.querySelectorAll('.download-button').forEach(btn =>
           btn.addEventListener('click', () => downloadFile(btn.dataset.filename))
         );
@@ -399,31 +428,30 @@
         document.querySelectorAll('.delete-button').forEach(btn =>
           btn.addEventListener('click', () => deleteFile(btn.dataset.filename))
         );
-
+  
       } catch (err) {
         loadingSpinner.style.display = 'none';
         console.error(err);
         folderContentsDiv.innerHTML = `<div class="notification is-danger">Error: ${err.message}</div>`;
       }
     }
-
+  
     // Download
     async function downloadFile(filename) {
       const token = localStorage.getItem('jwtToken');
-      if (!token) return window.location.href = '/index.html';
-
+      const folderId = folderIdSpan.textContent;
       try {
-        const tRes = await fetch(`http://localhost:3000/api/generate-download-token?folderID=${folderId}&filename=${encodeURIComponent(filename)}`, {
+        const tRes = await fetch(`/api/generate-download-token?folderID=${encodeURIComponent(folderId)}&filename=${encodeURIComponent(filename)}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!tRes.ok) throw new Error('No download token');
         const { token: dl } = await tRes.json();
-
-        const dlRes = await fetch(`http://localhost:3000/api/download-file?token=${dl}`);
+  
+        const dlRes = await fetch(`/api/download-file?token=${dl}`);
         if (!dlRes.ok) throw new Error(dlRes.statusText);
         const blob = await dlRes.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
         a.href = url; a.download = filename;
         document.body.appendChild(a); a.click();
         a.remove();
@@ -434,28 +462,28 @@
         showNotification(`Download failed: ${err.message}`, 'is-danger');
       }
     }
-
-    // View (redirect to media_view-redarector.html with filename in query)
+  
+    // View file
     function viewFile(filename) {
+      const folderId = folderIdSpan.textContent;
       window.location.href =
         `media_view-redarector.html?folderID=${encodeURIComponent(folderId)}&filename=${encodeURIComponent(filename)}`;
     }
-
+  
     // Delete
     async function deleteFile(filename) {
       const token = localStorage.getItem('jwtToken');
-      if (!token) return window.location.href = '/index.html';
+      const folderId = folderIdSpan.textContent;
       if (!confirm(`Delete ${filename}?`)) return;
-
+  
       try {
-        const res = await fetch(`/api/delete-file/${folderId}/${encodeURIComponent(filename)}`, {
+        const res = await fetch(`/api/delete-file/${encodeURIComponent(folderId)}/${encodeURIComponent(filename)}`, {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${token}` }
         });
-
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || res.statusText);
-
+  
         showNotification(data.message || 'Deleted');
         fetchFolderContents();
       } catch (err) {
@@ -463,19 +491,19 @@
         showNotification(`Delete failed: ${err.message}`, 'is-danger');
       }
     }
-
+  
     // Upload
     async function uploadFile() {
       const token = localStorage.getItem('jwtToken');
-      if (!token) return window.location.href = '/index.html';
-      const file = fileInput.files[0];
+      const file  = fileInput.files[0];
+      const folderId = folderIdSpan.textContent;
       if (!file) return showNotification('Select a file first', 'is-warning');
-
+  
       const form = new FormData();
       form.append('file', file);
       uploadButton.classList.add('is-loading');
       progressContainer.style.display = 'block';
-
+  
       const xhr = new XMLHttpRequest();
       xhr.upload.addEventListener('progress', e => {
         if (e.lengthComputable) {
@@ -505,11 +533,11 @@
         progressContainer.style.display = 'none';
         showNotification('Network error', 'is-danger');
       };
-      xhr.open('POST', `http://localhost:3000/api/upload-file/${folderId}`, true);
+      xhr.open('POST', `/api/upload-file/${encodeURIComponent(folderId)}`, true);
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
       xhr.send(form);
     }
-
+  
     // UI handlers
     fileInput.addEventListener('change', () => {
       const f = fileInput.files[0];
@@ -518,8 +546,8 @@
     });
     uploadButton.addEventListener('click', uploadFile);
     refreshButton.addEventListener('click', fetchFolderContents);
-
-    ['dragenter','dragover','dragnieave','drop'].forEach(ev =>
+  
+    ['dragenter','dragover','dragleave','drop'].forEach(ev =>
       dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); }, false)
     );
     ['dragenter','dragover'].forEach(ev =>
@@ -536,13 +564,15 @@
         uploadButton.disabled = false;
       }
     });
-
+  
+    // Add Friend
     document.getElementById('addFriendButton').addEventListener('click', async () => {
       const friendEmail = prompt('Enter the email of the user you want to invite:');
       if (!friendEmail) return;
       const token = localStorage.getItem('jwtToken');
+      const folderId = folderIdSpan.textContent;
       try {
-        const res = await fetch('http://localhost:3000/api/add-friend', {
+        const res = await fetch('/api/add-friend', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -552,13 +582,14 @@
         });
         const data = await res.json();
         if (res.ok) showNotification(data.message || 'Invitation sent!');
-        else showNotification(data.message || 'Failed', 'is-danger');
+        else        showNotification(data.message || 'Failed', 'is-danger');
       } catch (err) {
         console.error(err);
         showNotification('Error sending invitation.', 'is-danger');
       }
     });
-
+  
+    // Search filter
     searchInput.addEventListener('input', () => {
       const term = searchInput.value.toLowerCase();
       document.querySelectorAll('.file-item').forEach(item => {
@@ -566,46 +597,48 @@
         item.style.display = name.includes(term) ? 'flex' : 'none';
       });
     });
-
+  
     // Permission modal code
-    const permissionModal = document.getElementById('permissionModal');
-    const permissionModalBody = document.getElementById('permissionModalBody');
-    const savePermissionsButton = document.getElementById('savePermissionsButton');
-    const closePermissionModalButtons = [
+    const permissionModal          = document.getElementById('permissionModal');
+    const permissionModalBody      = document.getElementById('permissionModalBody');
+    const savePermissionsButton    = document.getElementById('savePermissionsButton');
+    const closePermissionModalBtns = [
       document.getElementById('closePermissionModal'),
       document.getElementById('closePermissionModalFooter')
     ];
     let localPermissions = {};
-
+  
     async function openPermissionModal() {
       const token = localStorage.getItem('jwtToken');
-      if (!token) return window.location.href = '/index.html';
+      const folderId = folderIdSpan.textContent;
       try {
         const [friendsRes, permsRes] = await Promise.all([
-          fetch(`http://localhost:3000/api/show-friends/${folderId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`http://localhost:3000/api/folders/${folderId}/friends/permissions`, { headers: { 'Authorization': `Bearer ${token}` } })
+          fetch(`/api/show-friends/${encodeURIComponent(folderId)}`,               { headers:{ 'Authorization': `Bearer ${token}` }}),
+          fetch(`/api/folders/${encodeURIComponent(folderId)}/friends/permissions`,{ headers:{ 'Authorization': `Bearer ${token}` }})
         ]);
         const friendsData = await friendsRes.json();
-        const permsData = await permsRes.json();
+        const permsData   = await permsRes.json();
         const friendsList = friendsData.friends || [];
-        const permsMap = {};
-        (permsData.friends || []).forEach(f => {
-          permsMap[f.username] = f.permissions;
-        });
+        const permsMap    = {};
+        (permsData.friends || []).forEach(f => permsMap[f.username] = f.permissions);
+  
         localPermissions = {};
-        let tableHtml = `<table class="table is-fullwidth"><thead><tr><th>Friend</th><th>Download</th><th>Upload</th><th>Delete</th><th>Add Users</th></tr></thead><tbody>`;
+        let tableHtml = `<table class="table is-fullwidth"><thead><tr>
+          <th>Friend</th><th>Download</th><th>Upload</th><th>Delete</th><th>Add Users</th>
+        </tr></thead><tbody>`;
+  
         friendsList.forEach(username => {
-          const p = permsMap[username] || { download: false, upload: false, delete: false, addUsers: false };
+          const p = permsMap[username] || { download:false, upload:false, delete:false, addUsers:false };
           localPermissions[username] = { ...p };
-          tableHtml += `
-            <tr>
-              <td>${username}</td>
-              <td><button class="button is-small permission-toggle" data-username="${username}" data-perm="download">${p.download ? '✅' : '❌'}</button></td>
-              <td><button class="button is-small permission-toggle" data-username="${username}" data-perm="upload">${p.upload ? '✅' : '❌'}</button></td>
-              <td><button class="button is-small permission-toggle" data-username="${username}" data-perm="delete">${p.delete ? '✅' : '❌'}</button></td>
-              <td><button class="button is-small permission-toggle" data-username="${username}" data-perm="addUsers">${p.addUsers ? '✅' : '❌'}</button></td>
-            </tr>`;
+          tableHtml += `<tr>
+            <td>${username}</td>
+            <td><button class="button is-small permission-toggle" data-username="${username}" data-perm="download">${p.download?'✅':'❌'}</button></td>
+            <td><button class="button is-small permission-toggle" data-username="${username}" data-perm="upload">${p.upload?'✅':'❌'}</button></td>
+            <td><button class="button is-small permission-toggle" data-username="${username}" data-perm="delete">${p.delete?'✅':'❌'}</button></td>
+            <td><button class="button is-small permission-toggle" data-username="${username}" data-perm="addUsers">${p.addUsers?'✅':'❌'}</button></td>
+          </tr>`;
         });
+  
         tableHtml += `</tbody></table>`;
         permissionModalBody.innerHTML = tableHtml;
         permissionModalBody.querySelectorAll('.permission-toggle').forEach(btn => {
@@ -616,69 +649,91 @@
             btn.textContent = localPermissions[user][perm] ? '✅' : '❌';
           });
         });
+  
         permissionModal.classList.add('is-active');
       } catch (err) {
         console.error('Error loading permissions', err);
         showNotification('Failed to load permissions', 'is-danger');
       }
     }
-
+  
     function closePermissionModal() {
       permissionModal.classList.remove('is-active');
     }
-
+  
     async function savePermissions() {
       const token = localStorage.getItem('jwtToken');
-      if (!token) return window.location.href = '/index.html';
+      const folderId = folderIdSpan.textContent;
+      savePermissionsButton.classList.add('is-loading');
       try {
-        savePermissionsButton.classList.add('is-loading');
         for (const username in localPermissions) {
-          const body = localPermissions[username];
-          await fetch(`http://localhost:3000/api/folders/${folderId}/friends/${encodeURIComponent(username)}/permissions`, {
+          await fetch(`/api/folders/${encodeURIComponent(folderId)}/friends/${encodeURIComponent(username)}/permissions`, {
             method: 'PUT',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify(body)
+            body: JSON.stringify(localPermissions[username])
           });
         }
-        savePermissionsButton.classList.remove('is-loading');
-        permissionModal.classList.remove('is-active');
         showNotification('Permissions updated successfully');
+        permissionModal.classList.remove('is-active');
       } catch (err) {
         console.error('Error saving permissions', err);
-        savePermissionsButton.classList.remove('is-loading');
         showNotification('Failed to save permissions', 'is-danger');
+      } finally {
+        savePermissionsButton.classList.remove('is-loading');
       }
     }
-
-    closePermissionModalButtons.forEach(btn => btn.addEventListener('click', closePermissionModal));
-    document.getElementById('changePermissionButton').addEventListener('click', openPermissionModal);
-
-    // Check ownership to hide Change Permission button
+  
+    closePermissionModalBtns.forEach(btn => btn.addEventListener('click', closePermissionModal));
+    changePermissionButton.addEventListener('click', openPermissionModal);
+  
+    // Make Public button handler
+    makePublicButton.addEventListener('click', async () => {
+      const token = localStorage.getItem('jwtToken');
+      const folderId = folderIdSpan.textContent;
+      makePublicButton.classList.add('is-loading');
+      try {
+        const res = await fetch(`/api/make-my-folder-public/${encodeURIComponent(folderId)}`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type':  'application/json'
+          },
+          body: JSON.stringify({})
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || res.statusText);
+        showNotification(data.message || 'Folder made public');
+        makePublicButton.disabled = true;
+      } catch (err) {
+        console.error('Error making folder public', err);
+        showNotification(`Error: ${err.message}`, 'is-danger');
+      } finally {
+        makePublicButton.classList.remove('is-loading');
+      }
+    });
+  
+    // Check ownership to hide owner-only buttons
     async function checkOwnership() {
       const token = localStorage.getItem('jwtToken');
-      if (!token) return;
+      const folderId = folderIdSpan.textContent;
       try {
-        const res = await fetch(`http://localhost:3000/api/am-I-owner-of-folder/${folderId}`, {
+        const res = await fetch(`/api/am-I-owner-of-folder/${encodeURIComponent(folderId)}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!res.ok) throw new Error('Not authorized');
         const { isOwner } = await res.json();
         if (!isOwner) {
-          const btn = document.getElementById('changePermissionButton');
-          if (btn) btn.style.display = 'none';
+          changePermissionButton.style.display = 'none';
+          makePublicButton.style.display       = 'none';
         }
       } catch (err) {
         console.error('Ownership check failed', err);
       }
     }
-    checkOwnership();
-
-    // Initial load
-    fetchFolderContents();
   </script>
-</body>
+  </body>
 
 </html>

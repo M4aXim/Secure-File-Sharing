@@ -34,14 +34,18 @@
       window.location.replace(
         `/view/word.html?folderID=${encodeURIComponent(folderID)}&filename=${encodeURIComponent(filename)}`
       );
+    } else if (ext === 'pdf') {
+      // Construct the blob URL for PDF files and open in a new tab
+      const fileURL = `blob:${window.location.origin}/${folderID}/${encodeURIComponent(filename)}`;
+      window.open(fileURL, '_blank');
     } else {
       document.body.innerHTML = `
       <div class="msg">
         Unsupported type: <strong>.${ext}</strong><br>
-        Please use MP4, MP3, or DOCX.
+        Please use MP4, MP3, DOCX, or PDF.
       </div>`;
       setTimeout(() => {
-      window.history.back();
+        window.history.back();
       }, 2000);
     }
   </script>

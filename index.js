@@ -88,8 +88,8 @@ fastify.register(require('@fastify/rate-limit'), { max: RATE_LIMIT_MAX, timeWind
 fastify.register(require('@fastify/static'), {
   root: __dirname,
   prefix: '/',
-  index: false,        // Disable automatic index.html
-  extensions: ['html'] // Resolve URLs like /about → about.html
+  index: false,
+  extensions: ['html']
 });
 
 // --- AUTH DECORATOR ---
@@ -284,38 +284,13 @@ fastify.post('/api/create-folder', { preHandler: [fastify.authenticate] }, async
     folderId,
     owner: req.user.username,
     createdAt: new Date().toISOString(),
-    friendPermissions: {}
+    friendPermissions: {},
+    isPublic: false
   });
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
 
   await logActivity(req, 'create-folder', { folderName, folderId });
   return { message: 'Folder created', folderId };
-});
-
-// GET /api/folder-contents
-fastify.get('/api/folder-contents', { preHandler: [fastify.authenticate] }, async (req, reply) => {
-  const folderId = req.query.folderID;
-  if (!folderId) return reply.badRequest('folderID is required');
-
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const meta    = folders.find(f => f.folderId === folderId);
-  if (!meta) return reply.notFound('Folder not found');
-
-  const isOwner     = meta.owner === req.user.username;
-  const perms       = (meta.friendPermissions || {})[req.user.username];
-  if (!isOwner && !perms) return reply.forbidden('Access denied');
-
-  const data = await s3.send(new ListObjectsV2Command({
-    Bucket: process.env.S3_BUCKET_NAME,
-    Prefix: `folders/${folderId}/`
-  }));
-
-  return (data.Contents || []).map(obj => ({
-    filename:     obj.Key.slice(`folders/${folderId}/`.length),
-    size:         obj.Size,
-    lastModified: obj.LastModified,
-    type:         path.extname(obj.Key)
-  }));
 });
 
 // POST /api/upload-file/:folderId
@@ -332,7 +307,11 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
 
   const isOwner = meta.owner === req.user.username;
   const perms   = (meta.friendPermissions || {})[req.user.username];
-  if (!isOwner && !perms?.upload) return reply.forbidden('Access denied');
+
+  // Public folders: only owner or users with explicit upload permission can add files
+  if (!isOwner && !perms?.upload) {
+    return reply.forbidden('Access denied');
+  }
 
   const filename = `${Date.now()}-${upload.filename}`;
   const fileBuffer = await upload.toBuffer();
@@ -350,28 +329,37 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
 });
 
 // GET /api/generate-download-token
-fastify.get('/api/generate-download-token', { preHandler: [fastify.authenticate] }, async (req, reply) => {
-  const { folderID, filename } = req.query;
-  if (!folderID || !filename) return reply.badRequest('Missing params');
+fastify.get('/api/generate-download-token', async (req, reply) => {
+  const folderId = req.query.folderId || req.query.folderID;
+  const filename = req.query.filename;
+  if (!folderId || !filename) return reply.badRequest('Missing params');
 
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const meta    = folders.find(f => f.folderId === folderID);
+  const meta    = folders.find(f => f.folderId === folderId);
   if (!meta) return reply.notFound('Folder not found');
 
-  const isOwner = meta.owner === req.user.username;
-  const perms   = (meta.friendPermissions||{})[req.user.username];
-  if (!isOwner && !perms?.download) return reply.forbidden('Access denied');
+  // Public folders can always generate a token
+  if (!meta.isPublic) {
+    try {
+      await req.jwtVerify();
+    } catch {
+      return reply.unauthorized('Invalid or missing token');
+    }
+    const isOwner = meta.owner === req.user.username;
+    const perms   = (meta.friendPermissions || {})[req.user.username];
+    if (!isOwner && !perms?.download) return reply.forbidden('Access denied');
+  }
 
   try {
     await s3.send(new HeadObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
-      Key:    `folders/${folderID}/${filename}`
+      Key:    `folders/${folderId}/${filename}`
     }));
   } catch {
     return reply.notFound('File not found');
   }
 
-  return { token: makeDownloadToken(folderID, filename) };
+  return { token: makeDownloadToken(folderId, filename) };
 });
 
 // GET /api/download-file
@@ -395,14 +383,23 @@ fastify.get('/api/download-file', async (req, reply) => {
 });
 
 // GET /api/open-file
-fastify.get('/api/open-file', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+fastify.get('/api/open-file', async (req, reply) => {
   const { folderId, filename } = req.query;
   if (!folderId || !filename) return reply.badRequest('Missing folderId or filename');
 
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
   const meta    = folders.find(f => f.folderId === folderId);
   if (!meta) return reply.notFound('Folder not found');
-  if (meta.owner !== req.user.username) return reply.forbidden('Access denied');
+
+  // Only public folders or owners can open inline
+  if (!meta.isPublic) {
+    try {
+      await req.jwtVerify();
+    } catch {
+      return reply.unauthorized('Invalid or missing token');
+    }
+    if (meta.owner !== req.user.username) return reply.forbidden('Access denied');
+  }
 
   const ext      = path.extname(filename).toLowerCase();
   const mimeType = ({
@@ -427,7 +424,7 @@ fastify.get('/api/open-file', { preHandler: [fastify.authenticate] }, async (req
 });
 
 // GET /api/view-file/:folderId/*
-fastify.get('/api/view-file/:folderId/*', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+fastify.get('/api/view-file/:folderId/*', async (req, reply) => {
   const { folderId } = req.params;
   const filename     = req.params['*'];
   const key          = `folders/${folderId}/${filename}`;
@@ -436,9 +433,17 @@ fastify.get('/api/view-file/:folderId/*', { preHandler: [fastify.authenticate] }
   const meta    = folders.find(f => f.folderId === folderId);
   if (!meta) return reply.notFound('Folder not found');
 
-  const isOwner = meta.owner === req.user.username;
-  const perms   = (meta.friendPermissions||{})[req.user.username];
-  if (!isOwner && !perms?.download) return reply.forbidden('Access denied');
+  // Public folders are open to inline viewing
+  if (!meta.isPublic) {
+    try {
+      await req.jwtVerify();
+    } catch {
+      return reply.unauthorized('Invalid or missing token');
+    }
+    const isOwner = meta.owner === req.user.username;
+    const perms   = (meta.friendPermissions||{})[req.user.username];
+    if (!isOwner && !perms?.download) return reply.forbidden('Access denied');
+  }
 
   try {
     await s3.send(new HeadObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key }));
@@ -466,7 +471,11 @@ fastify.delete('/api/delete-file/:folderId/*', { preHandler: [fastify.authentica
 
   const isOwner = meta.owner === req.user.username;
   const perms   = (meta.friendPermissions||{})[req.user.username];
-  if (!isOwner && !perms?.delete) return reply.forbidden('Access denied');
+
+  // Public folders: only owner or users with delete permission can remove files
+  if (!isOwner && !perms?.delete) {
+    return reply.forbidden('Access denied');
+  }
 
   try {
     await s3.send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key }));
@@ -644,16 +653,16 @@ fastify.post('/api/change-password/:email', async (req, reply) => {
 fastify.post('/api/law-enforcement-request/:username', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const targetUser = req.params.username;
   const requester  = req.user.username;
-  
+
   // Only the OWNER can initiate this request
   if (requester !== OWNER_USERNAME) {
     return reply.forbidden(`Only ${OWNER_USERNAME} can initiate this request`);
   }
 
   const { email } = req.body;
-  
+
   // Validate .gov or maksimmalbasa.in.rs email
-  if (!email || !/^[^\s@]+@([^\s@]+\.(gov(\.[a-z]{2})?|gov)|maksimmalbasa\.in\.rs)$/.test(email)) {
+  if (!email || !/^[^\s@]+@[^\s@]+\.(gov(\.[a-z]{2})?|gov)|maksimmalbasa\.in\.rs$/.test(email)) {
     return reply.badRequest('Invalid or missing .gov email address');
   }
 
@@ -851,33 +860,37 @@ fastify.delete('/api/staff/folders/:folderId/friends/:friendUsername', { preHand
 });
 
 // Scan folder contents metadata (staff)
-fastify.get('/api/staff/folder-contents', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
-  const { folderId } = req.query;
+fastify.get('/api/folder-contents', async (req, reply) => {
+  const folderId = req.query.folderId || req.query.folderID;
   if (!folderId) return reply.badRequest('folderId is required');
 
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const folder = folders.find(f => f.folderId === folderId);
-  if (!folder) return reply.notFound('Folder not found');
+  const meta    = folders.find(f => f.folderId === folderId);
+  if (!meta) return reply.notFound('Folder not found');
 
-  try {
-    const data = await s3.send(new ListObjectsV2Command({
-      Bucket: process.env.S3_BUCKET_NAME,
-      Prefix: `folders/${folderId}/`
-    }));
-
-    const list = (data.Contents || []).map(obj => ({
-      filename: obj.Key.slice(`folders/${folderId}/`.length),
-      size: obj.Size,
-      lastModified: obj.LastModified,
-      type: path.extname(obj.Key)
-    }));
-
-    await logActivity(req, 'staff-scan-folder', { folderId });
-    return list;
-  } catch (err) {
-    fastify.log.error('S3 folder scan error:', err);
-    return reply.internalServerError('Error scanning S3 folder contents');
+  // Public folders are open to everyone
+  if (!meta.isPublic) {
+    try {
+      await req.jwtVerify();
+    } catch {
+      return reply.unauthorized('Invalid or missing token');
+    }
+    const isOwner = meta.owner === req.user.username;
+    const perms   = (meta.friendPermissions || {})[req.user.username];
+    if (!isOwner && !perms) return reply.forbidden('Access denied');
   }
+
+  const data = await s3.send(new ListObjectsV2Command({
+    Bucket: process.env.S3_BUCKET_NAME,
+    Prefix: `folders/${folderId}/`
+  }));
+
+  return (data.Contents || []).map(obj => ({
+    filename:     obj.Key.slice(`folders/${folderId}/`.length),
+    size:         obj.Size,
+    lastModified: obj.LastModified,
+    type:         path.extname(obj.Key)
+  }));
 });
 
 // Flag a folder
@@ -888,11 +901,10 @@ fastify.post('/api/staff/flag-folder/:folderId', { preHandler: [fastify.authenti
   if (!folder) return reply.notFound('Folder not found');
   folder.flagged = true;
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
-  
+
   try {
-    // Email to OWNER_USERNAME from .env
     await transporter.sendMail({
-      from: `"File Sharing" <${process.env.EMAIL_USER}>`, 
+      from: `"File Sharing" <${process.env.EMAIL_USER}>`,
       to: OWNER_USERNAME,
       bcc: BCC_LIST,
       subject: 'Folder Flagged by Staff Member',
@@ -916,22 +928,17 @@ fastify.delete('/api/staff/folders/:folderId', { preHandler: [fastify.authentica
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
   const idx = folders.findIndex(f => f.folderId === folderId);
   if (idx === -1) return reply.notFound('Folder not found');
-  
+
   try {
-    // First, list all objects in the S3 folder
     const data = await s3.send(new ListObjectsV2Command({ Bucket: process.env.S3_BUCKET_NAME, Prefix: `folders/${folderId}/` }));
-    
-    // Delete each object from S3
     if (data.Contents && data.Contents.length > 0) {
       for (const obj of data.Contents) {
         await s3.send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: obj.Key }));
       }
     }
-    
-    // Remove from local folders list
     folders.splice(idx, 1);
     await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
-    
+
     await logActivity(req, 'staff-delete-folder', { folderId, filesDeleted: data.Contents ? data.Contents.length : 0 });
     return reply.send({ message: 'Folder and all its contents deleted' });
   } catch (err) {
@@ -998,18 +1005,34 @@ fastify.get('/api/check-role', { preHandler: [fastify.authenticate] }, async (re
   return { role: req.user.role };
 });
 
+// Am I owner or can add users
 fastify.get('/api/am-I-owner-of-folder/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { folderId } = req.params;
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
   const folder = folders.find(f => f.folderId === folderId);
-  
+
   if (!folder) return reply.notFound('Folder not found');
-  
+
   const isOwner = folder.owner === req.user.username;
   const hasAddUsersPermission = folder.friendPermissions?.[req.user.username]?.addUsers === true;
-  
+
   return { isOwner: isOwner || hasAddUsersPermission };
 });
+
+// --- Make Folder Public Endpoint ---
+// POST /api/make-my-folder-public/:folderId
+fastify.post('/api/make-my-folder-public/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { folderId } = req.params;
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder = folders.find(f => f.folderId === folderId);
+  if (!folder) return reply.notFound('Folder not found');
+  if (folder.owner !== req.user.username) return reply.forbidden('Only owner can make folder public');
+  folder.isPublic = true;
+  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+  await logActivity(req, 'make-folder-public', { folderId });
+  return reply.send({ message: 'Folder is now public' });
+});
+
 // --- CAT API ENDPOINT ---
 fastify.get('/api/curl/cats', async (req, reply) => {
   try {
@@ -1023,22 +1046,30 @@ fastify.get('/api/curl/cats', async (req, reply) => {
       headers: headers,
       redirect: 'follow'
     };
-    
+
     const response = await fetch(
       "https://api.thecatapi.com/v1/images/search?size=med&mime_types=jpg&format=json&has_breeds=true&order=RANDOM&page=0&limit=1",
       requestOptions
     );
-    
+
     if (!response.ok) {
       throw new Error(`Cat API responded with status: ${response.status}`);
     }
-    
+
     const data = await response.json();
     return data;
   } catch (err) {
     fastify.log.error('Error fetching cat data:', err);
     return reply.internalServerError('Failed to fetch cat data');
   }
+});
+
+fastify.get('/api/is-folder-public/:folderId', async (req, reply) => {
+  const { folderId } = req.params;
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder  = folders.find(f => f.folderId === folderId);
+  if (!folder) return reply.notFound('Folder not found');
+  return { isPublic: folder.isPublic };
 });
 
 // --- SPA fallback for non-API routes ---
