@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remove Friend from Folder - Staff Control</title>
+    <!-- Add Bulma CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <!-- Add Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .main-content {
+            margin-top: 2rem;
+            margin-bottom: 2rem;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <section class="section">
+        <div class="container">
+            <div class="columns is-centered">
+                <div class="column is-half">
+                    <div class="box">
+                        <h1 class="title has-text-centered is-4">
+                            <span class="icon has-text-danger">
+                                <i class="fas fa-user-slash"></i>
+                            </span>
+                            Remove Friend Access
+                        </h1>
+                        
+                        <div class="content">
+                            <form id="remove-friend-form">
+                                <div class="field">
+                                    <label class="label" for="folder-id">Folder ID</label>
+                                    <div class="control has-icons-left">
+                                        <input class="input" type="text" id="folder-id" name="folderId" required placeholder="Enter folder ID">
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-folder"></i>
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <div class="field">
+                                    <label class="label" for="friend-username">Friend's Username</label>
+                                    <div class="control has-icons-left">
+                                        <input class="input" type="text" id="friend-username" name="friendUsername" required placeholder="Enter username">
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-user"></i>
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <div class="field">
+                                    <div class="control">
+                                        <button type="submit" class="button is-danger is-fullwidth">
+                                            <span class="icon">
+                                                <i class="fas fa-ban"></i>
+                                            </span>
+                                            <span>Remove Friend Access</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        
+                        <div id="status-message" class="notification hidden"></div>
+                        
+                        <div class="has-text-centered mt-4">
+                            <a href="/staff/Hello.html" class="button is-link is-light">
+                                <span class="icon">
+                                    <i class="fas fa-arrow-left"></i>
+                                </span>
+                                <span>Back to Dashboard</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <script src="/javascript/staff/kick-a-friend.js"></script>
+</body>
+</html>
