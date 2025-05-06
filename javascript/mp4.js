@@ -38,8 +38,7 @@ const jumpPrev = document.getElementById('jumpPrev');
 const jumpNext = document.getElementById('jumpNext');
 
 // Point at your existing API endpoint
-const apiBase = `${window.location.protocol}//${window.location.host}`;
-const videoSrc = `${apiBase}/api/view-file/${encodeURIComponent(folderID)}/${encodeURIComponent(filename)}`;
+const videoSrc = `/api/view-file/${encodeURIComponent(folderID)}/${encodeURIComponent(filename)}`;
 
 // Create a video source with credentials
 const xhr = new XMLHttpRequest();

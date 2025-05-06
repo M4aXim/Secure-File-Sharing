@@ -29,8 +29,7 @@
     document.title = `Playing: ${decodedName}`;
 
     // Build API URL
-    const apiBase = `${window.location.protocol}//${window.location.host}`;
-    const audioUrl = `${apiBase}/api/view-file/${encodeURIComponent(folderID)}/${encodeURIComponent(filename)}`;
+    const audioUrl = `/api/view-file/${encodeURIComponent(folderID)}/${encodeURIComponent(filename)}`;
 
     // Fetch with auth and set as audio source
     const xhr = new XMLHttpRequest();

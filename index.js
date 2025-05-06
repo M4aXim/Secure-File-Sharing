@@ -20,6 +20,7 @@ const nodemailer         = require('nodemailer');
 const os                 = require('os');
 const mime               = require('mime-types');
 const { MongoClient }    = require('mongodb');
+const fetch = require('node-fetch');
 
 const fastify = fastifyLib({
   logger: { level: process.env.LOG_LEVEL || 'info' }
@@ -659,23 +660,22 @@ fastify.put('/api/folders/:folderId/friends/:friendUsername/permissions', { preH
 });
 
 // POST /api/change-password/:email
+// POST /api/change-password/:email
 fastify.post('/api/change-password/:email', async (req, reply) => {
   const email = req.params.email;
-  let users;
-  try {
-    users = JSON.parse(await fsPromises.readFile(USERS_FILE, 'utf8'));
-  } catch (err) {
-    fastify.log.error(err);
-    return reply.code(500).send({ error: 'Could not read users file' });
+
+  const user = await usersColl.findOne({ email });
+  if (!user) {
+    return reply.code(404).send({ error: 'User not found' });
   }
 
-  const entry = Object.entries(users).find(([_, u]) => u.email === email);
-  if (!entry) return reply.code(404).send({ error: 'User not found' });
-  const [username, user] = entry;
-
   const newPass = crypto.randomBytes(6).toString('hex');
-  user.password = await bcrypt.hash(newPass, SALT_ROUNDS);
-  await fsPromises.writeFile(USERS_FILE, JSON.stringify(users, null, 2));
+  const hash = await bcrypt.hash(newPass, SALT_ROUNDS);
+
+  await usersColl.updateOne(
+    { email },
+    { $set: { password: hash } }
+  );
 
   try {
     await transporter.sendMail({
@@ -685,11 +685,12 @@ fastify.post('/api/change-password/:email', async (req, reply) => {
       text: `Hello,\n\nYour new password is: ${newPass}\n\nPlease change it after logging in.\n`
     });
   } catch (err) {
-    fastify.log.error(err);
+    fastify.log.error('Failed to send reset email:', err);
     return reply.code(500).send({ error: 'Failed to send email' });
   }
 
-  await logActivity(req, 'change-password', { username });
+  await logActivity(req, 'change-password', { username: user.username });
+
   return reply.send({ message: 'An email with your new password has been sent.' });
 });
 
@@ -1409,22 +1410,22 @@ fastify.delete('/api/owner/delete-account', { preHandler: [fastify.authenticate]
 
 
 fastify.get('/api/recommended-files', { preHandler: [fastify.authenticate] }, async (req, reply) => {
-  const raw     = await fsPromises.readFile(FOLDERS_FILE, 'utf8');
+  const raw = await fsPromises.readFile(FOLDERS_FILE, 'utf8');
   const folders = JSON.parse(raw);
   const username = req.user.username;
 
-  // find folders owned by user or shared with user
+  // Collect relevant folders
   const relevant = folders.filter(f =>
-    f.owner === username ||
-    (f.friendPermissions && f.friendPermissions[username])
+    f.owner === username || (f.friendPermissions && f.friendPermissions[username])
   );
 
-  // collect all files from those folders
+  // Collect files
   let allFiles = [];
   for (const folder of relevant) {
     const objs = await listAllObjects(`folders/${folder.folderId}/`);
     const files = objs.map(obj => ({
       folderId:     folder.folderId,
+      folderName:   folder.folderName,
       filename:     obj.Key.slice(`folders/${folder.folderId}/`.length),
       size:         obj.Size,
       lastModified: obj.LastModified
@@ -1432,13 +1433,146 @@ fastify.get('/api/recommended-files', { preHandler: [fastify.authenticate] }, as
     allFiles = allFiles.concat(files);
   }
 
-  // sort by most recent and take top 10
-  allFiles.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
-  const recommended = allFiles.slice(0, 10);
+  // Short-circuit fallback if no files
+  if (allFiles.length === 0) return { recommended: [] };
 
-  await logActivity(req, 'get-recommended-files');
-  return { recommended };
+  // Prepare AI input
+  const prompt = [
+    {
+      role: 'user',
+      content: `From this list of files:\n\n${JSON.stringify(allFiles.slice(0, 50), null, 2)}\n\nRecommend the top 5 files that the user is most likely to care about right now. Only return a raw JSON array of 5 objects like: [{"folderId":"...","filename":"..."}]. No explanation, no extra text.`
+    }
+  ];
+
+  try {
+    const response = await fetch('https://ai.hackclub.com/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: prompt })
+    });
+
+    const data = await response.json();
+
+    let aiRecommended = [];
+    try {
+      aiRecommended = JSON.parse(data.choices[0].message.content);
+      if (!Array.isArray(aiRecommended)) throw new Error('AI output is not an array');
+    } catch (parseErr) {
+      fastify.log.error('Failed to parse AI response:', data.choices?.[0]?.message?.content || 'No content');
+      throw new Error('AI response is not valid JSON');
+    }
+
+    // Match AI results to enrich with original metadata
+    const recommended = aiRecommended.map(({ folderId, filename }) =>
+      allFiles.find(f => f.folderId === folderId && f.filename === filename)
+    ).filter(Boolean);
+
+    await logActivity(req, 'get-recommended-files-ai');
+    return { recommended };
+
+  } catch (err) {
+    fastify.log.error(`AI recommendation error: ${err?.message || err}`);
+    // fallback to recent files
+    allFiles.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+    const fallback = allFiles.slice(0, 10);
+    return { recommended: fallback };
+  }
 });
+
+async function reviewFilesForViolations() {
+  console.log('Starting AI-powered content safety review…');
+
+  const allObjects = await listAllObjects('folders/');
+
+  const metadata = allObjects.map(obj => ({
+    key: obj.Key,
+    size: obj.Size,
+    lastModified: obj.LastModified.toISOString()
+  }));
+
+  const prompt = [
+    {
+      role: 'user',
+      content: `Review the following list of file metadata and identify files that may contain illegal content, including but not limited to: child exploitation material, terrorism-related content, instructions for creating illegal substances/weapons, or evidence of human trafficking. Return a raw JSON array of objects with { key, reason, severity } for each flagged file. Assign severity as "high", "medium", or "low". Here is the metadata:\n\n${JSON.stringify(metadata, null, 2)}`
+    }
+  ];
+
+  let flagged = [];
+  try {
+    const aiRes = await fetch('https://ai.hackclub.com/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: prompt })
+    });
+
+    const aiData = await aiRes.json();
+    let rawContent = aiData.choices[0].message.content.trim();
+
+    console.log('AI safety review response:\n', rawContent);
+
+    if (rawContent.startsWith('```')) {
+      rawContent = rawContent.replace(/^```(json)?/, '').replace(/```$/, '').trim();
+    }
+
+    flagged = JSON.parse(rawContent);
+    if (!Array.isArray(flagged)) throw new Error('AI output is not an array');
+  } catch (err) {
+    fastify.log.error('AI content safety detection error:', err);
+    flagged = [];
+  }
+
+  let report = `AI-Powered Content Safety Review Report (${new Date().toISOString()})\n\n`;
+  if (flagged.length === 0) {
+    report += '✅ No suspicious content detected by AI.';
+  } else {
+    report += `⚠️ URGENT: AI flagged ${flagged.length} file(s) for potentially illegal content:\n`;
+    
+    // Group by severity
+    const highSeverity = flagged.filter(f => f.severity === 'high');
+    const mediumSeverity = flagged.filter(f => f.severity === 'medium');
+    const lowSeverity = flagged.filter(f => f.severity === 'low');
+    
+    if (highSeverity.length > 0) {
+      report += `\n== HIGH SEVERITY CONCERNS (${highSeverity.length}) ==\n`;
+      for (const f of highSeverity) {
+        report += `- ${f.key}: ${f.reason}\n`;
+      }
+    }
+    
+    if (mediumSeverity.length > 0) {
+      report += `\n== MEDIUM SEVERITY CONCERNS (${mediumSeverity.length}) ==\n`;
+      for (const f of mediumSeverity) {
+        report += `- ${f.key}: ${f.reason}\n`;
+      }
+    }
+    
+    if (lowSeverity.length > 0) {
+      report += `\n== LOW SEVERITY CONCERNS (${lowSeverity.length}) ==\n`;
+      for (const f of lowSeverity) {
+        report += `- ${f.key}: ${f.reason}\n`;
+      }
+    }
+    
+    report += '\nPlease review these files immediately and take appropriate action.';
+  }
+
+  try {
+    await transporter.sendMail({
+      from: `"File Sharing URGENT" <${process.env.EMAIL_USER}>`,
+      to: OWNER_USERNAME,
+      bcc: BCC_LIST,
+      subject: 'URGENT: AI Content Safety Review Report',
+      text: report
+    });
+    fastify.log.info('AI content safety report emailed to', OWNER_USERNAME);
+  } catch (err) {
+    console.error('Failed to send AI content safety report:', err);
+  }
+}
+
+
+setInterval(reviewFilesForViolations, 10 * 60 * 60 * 1000);
+reviewFilesForViolations();
 
 fastify.get('/api/health', async (req, reply) => {
   const health = {
@@ -1447,6 +1581,9 @@ fastify.get('/api/health', async (req, reply) => {
     s3: 'OK',
     timestamp: new Date().toISOString()
   };
+
+
+  
 
   // Check MongoDB connection
   try {

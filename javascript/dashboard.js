@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Verify token with server
-    fetch('http://localhost:3000/api/verify-token', {
+    fetch('/api/verify-token', {
       headers: {
         'Authorization': `Bearer ${token}`
       }
@@ -102,7 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('.page-title').textContent = 'Home';
     
     try {
-      const response = await fetch('http://localhost:3000/api/recommended-files', {
+      const response = await fetch('/api/recommended-files', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -247,7 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const response = await fetch('http://localhost:3000/api/shared-folders', {
+      const response = await fetch('/api/shared-folders', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -290,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const response = await fetch('http://localhost:3000/api/create-folder', {
+      const response = await fetch('/api/create-folder', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -321,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const response = await fetch('http://localhost:3000/api/my-folders', {
+      const response = await fetch('/api/my-folders', {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -406,7 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     try {
-      const response = await fetch('http://localhost:3000/api/change-your-password', {
+      const response = await fetch('/api/change-your-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -437,7 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!token) return;
     
     try {
-      const response = await fetch('http://localhost:3000/api/check-role', {
+      const response = await fetch('/api/check-role', {
         headers: {
           'Authorization': `Bearer ${token}`
         }

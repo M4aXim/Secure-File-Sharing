@@ -6,7 +6,7 @@ function forgotPassword() {
       return;
     }
   
-    fetch(`http://localhost:3000/change-password/${encodeURIComponent(email)}`, {
+    fetch(`/api/change-password/${encodeURIComponent(email)}`, {
       method: 'POST' 
     })
     .then(response => response.json())
@@ -45,7 +45,7 @@ function forgotPassword() {
           return;
         }
         
-        fetch('http://localhost:3000/api/register', {
+        fetch('/api/register', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -76,7 +76,7 @@ function forgotPassword() {
           return;
         }
         
-        fetch('http://localhost:3000/api/login', {
+        fetch('/api/login', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
