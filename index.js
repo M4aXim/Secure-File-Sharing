@@ -422,8 +422,16 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
   const isOwner = meta.owner === req.user.username;
   const perms   = (meta.friendPermissions || {})[req.user.username];
 
-  // Public folders: only owner or users with explicit upload permission can add files
+  // Check if user has upload permission through group membership
+  let hasGroupUploadPermission = false;
   if (!isOwner && !perms?.upload) {
+    const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+    const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
+    hasGroupUploadPermission = myGroupIds.some(id => meta.groupPermissions?.[id]?.upload === true);
+  }
+
+  // Public folders: only owner, users with explicit upload permission, or group members with upload permission can add files
+  if (!isOwner && !perms?.upload && !hasGroupUploadPermission) {
     return reply.forbidden('Access denied');
   }
 
@@ -552,8 +560,8 @@ fastify.get('/api/open-file', async (req, reply) => {
     if (friendPerms?.download) allowed = true;
 
     if (!allowed) {
-      const groups      = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-      const myGroupIds  = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
+      const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+      const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
       const groupPermOk = myGroupIds.some(id => meta.groupPermissions?.[id]?.download === true);
       if (groupPermOk) allowed = true;
     }
@@ -597,7 +605,10 @@ fastify.get('/api/view-file/:folderId/*', { preHandler: [fastify.authenticate] }
     if (!allowed) {
       const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
       const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
-      const groupPermOk = myGroupIds.some(id => meta.groupPermissions?.[id]?.view === true);
+      const groupPermOk = myGroupIds.some(id => 
+        meta.groupPermissions?.[id]?.view === true || 
+        meta.groupPermissions?.[id]?.download === true
+      );
       if (groupPermOk) allowed = true;
     }
   }
@@ -636,8 +647,16 @@ fastify.delete('/api/delete-file/:folderId/*', { preHandler: [fastify.authentica
   const isOwner = meta.owner === req.user.username;
   const perms   = (meta.friendPermissions||{})[req.user.username];
 
-  // Public folders: only owner or users with delete permission can remove files
+  // Check if user has delete permission through group membership
+  let hasGroupDeletePermission = false;
   if (!isOwner && !perms?.delete) {
+    const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+    const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
+    hasGroupDeletePermission = myGroupIds.some(id => meta.groupPermissions?.[id]?.delete === true);
+  }
+
+  // Public folders: only owner, users with explicit delete permission, or group members with delete permission can remove files
+  if (!isOwner && !perms?.delete && !hasGroupDeletePermission) {
     return reply.forbidden('Access denied');
   }
 
