@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Groups Management - FileShare</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root {
+            --primary-color: #4a6fa5;
+            --primary-light: #edf2f7;
+            --accent-color: #47d5b9;
+            --text-color: #2d3748;
+            --light-gray: #f7fafc;
+            --border-radius: 8px;
+            --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f7fa;
+            color: var(--text-color);
+        }
+        
+        .navbar {
+            background-color: var(--primary-color);
+            box-shadow: var(--box-shadow);
+        }
+        
+        .navbar-item {
+            color: white;
+            font-weight: 500;
+        }
+        
+        .navbar-item:hover {
+            background-color: rgba(255, 255, 255, 0.1) !important;
+            color: white !important;
+        }
+        
+        .navbar-brand .navbar-item {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+        
+        .section {
+            padding: 2rem 1.5rem;
+        }
+        
+        .box {
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            border: 1px solid #e2e8f0;
+        }
+        
+        .title {
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+        
+        .group-card {
+            transition: all 0.3s ease;
+            border-radius: var(--border-radius);
+            border: none;
+            overflow: hidden;
+        }
+        
+        .group-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .group-card .card-header {
+            background-color: var(--primary-light);
+            border-bottom: 1px solid #e2e8f0;
+        }
+        
+        .group-card .card-header-title {
+            color: var(--primary-color);
+        }
+        
+        .group-card .card-content {
+            padding: 1.5rem;
+        }
+        
+        .member-tag {
+            background-color: var(--primary-light);
+            color: var(--primary-color);
+            border-radius: 20px;
+            padding: 0.5rem 0.8rem;
+            margin: 0.2rem;
+            font-size: 0.85rem;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .folder-permission {
+            margin-bottom: 0.8rem;
+            border-radius: var(--border-radius);
+            transition: all 0.2s ease;
+        }
+        
+        .folder-permission:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        .modal-card {
+            border-radius: var(--border-radius);
+            overflow: hidden;
+        }
+        
+        .modal-card-head {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        
+        .modal-card-title {
+            color: white;
+            font-weight: 600;
+        }
+        
+        .tabs li.is-active a {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+        }
+        
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .loading .box {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 50%;
+        }
+        
+        .button.is-primary {
+            background-color: var(--primary-color);
+        }
+        
+        .button.is-primary:hover {
+            background-color: #3d5d8a;
+        }
+        
+        .button.is-accent {
+            background-color: var(--accent-color);
+            color: white;
+        }
+        
+        .button.is-accent:hover {
+            background-color: #3cb9a0;
+        }
+        
+        .input:focus, .textarea:focus, .select select:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.125em rgba(74, 111, 165, 0.25);
+        }
+        
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1001;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            max-width: 350px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #a0aec0;
+        }
+        
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        
+        .group-members-preview {
+            display: flex;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+        
+        .group-stats {
+            display: flex;
+            margin-top: 1rem;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 1rem;
+        }
+        
+        .group-stat {
+            flex: 1;
+            text-align: center;
+            font-size: 0.9rem;
+            color: #718096;
+        }
+        
+        .group-stat strong {
+            display: block;
+            font-size: 1.2rem;
+            color: var(--primary-color);
+            margin-bottom: 0.25rem;
+        }
+        
+        .checkbox:hover {
+            color: var(--primary-color);
+        }
+        
+        /* Custom checkbox styling */
+        .checkbox input[type="checkbox"] {
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar" role="navigation" aria-label="main navigation">
+        <div class="container">
+            <div class="navbar-brand">
+                <a class="navbar-item" href="/dashboard.html">
+                    <i class="fas fa-share-alt"></i>
+                    <span class="ml-2">FileShare</span>
+                </a>
+            </div>
+            <div class="navbar-end">
+                <a class="navbar-item" href="/dashboard.html">
+                    <i class="fas fa-folder"></i>
+                    <span class="ml-2">My Folders</span>
+                </a>
+                <a class="navbar-item" href="/groups.html">
+                    <i class="fas fa-users"></i>
+                    <span class="ml-2">Groups</span>
+                </a>
+                <a class="navbar-item" href="#" id="logoutBtn">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span class="ml-2">Logout</span>
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <section class="section">
+        <div class="container">
+            <div class="columns">
+                <!-- Left Column: Create Group -->
+                <div class="column is-4">
+                    <div class="box">
+                        <h2 class="title is-4">
+                            <span class="icon-text">
+                                <span class="icon">
+                                    <i class="fas fa-plus-circle"></i>
+                                </span>
+                                <span>Create New Group</span>
+                            </span>
+                        </h2>
+                        <form id="createGroupForm">
+                            <div class="field">
+                                <label class="label">Group Name</label>
+                                <div class="control has-icons-left">
+                                    <input class="input" type="text" id="groupName" required 
+                                           pattern="[\w\- ]{3,50}" 
+                                           placeholder="Enter group name"
+                                           title="3-50 characters, letters, numbers, spaces, hyphens and underscores only">
+                                    <span class="icon is-small is-left">
+                                        <i class="fas fa-users"></i>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="field">
+                                <label class="label">Member Usernames</label>
+                                <div class="control has-icons-left">
+                                    <textarea class="textarea" id="memberUsernames" 
+                                              placeholder="Enter usernames, one per line" required></textarea>
+                                </div>
+                                <p class="help">Enter at least 2 usernames, one per line</p>
+                            </div>
+                            <div class="field">
+                                <div class="control">
+                                    <button class="button is-primary is-fullwidth" type="submit">
+                                        <span class="icon">
+                                            <i class="fas fa-users"></i>
+                                        </span>
+                                        <span>Create Group</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Right Column: Groups List -->
+                <div class="column is-8">
+                    <div class="box">
+                        <h2 class="title is-4">
+                            <span class="icon-text">
+                                <span class="icon">
+                                    <i class="fas fa-users"></i>
+                                </span>
+                                <span>My Groups</span>
+                            </span>
+                        </h2>
+                        <div id="groupsList">
+                            <!-- Empty state will be shown when no groups are found -->
+                            <!-- Groups cards will be populated here by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Group Details Modal -->
+    <div class="modal" id="groupModal">
+        <div class="modal-background"></div>
+        <div class="modal-card">
+            <header class="modal-card-head">
+                <p class="modal-card-title">
+                    <span class="icon">
+                        <i class="fas fa-users"></i>
+                    </span>
+                    <span id="modalGroupName">Group Details</span>
+                </p>
+                <button class="delete" aria-label="close"></button>
+            </header>
+            <section class="modal-card-body">
+                <div class="tabs is-boxed">
+                    <ul>
+                        <li class="is-active"><a data-tab="members">
+                            <span class="icon is-small"><i class="fas fa-user"></i></span>
+                            <span>Members</span>
+                        </a></li>
+                        <li><a data-tab="folders">
+                            <span class="icon is-small"><i class="fas fa-folder"></i></span>
+                            <span>Folder Permissions</span>
+                        </a></li>
+                    </ul>
+                </div>
+
+                <div id="membersTab" class="tab-content">
+                    <div id="membersList" class="mt-4">
+                        <!-- Members will be populated here -->
+                    </div>
+                </div>
+
+                <div id="foldersTab" class="tab-content" style="display: none;">
+                    <div class="field">
+                        <label class="label">Add Folder Permission</label>
+                        <div class="field has-addons">
+                            <div class="control is-expanded">
+                                <div class="select is-fullwidth">
+                                    <select id="folderSelect">
+                                        <option value="">Select a folder</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="control">
+                                <button class="button is-primary" id="addFolderBtn">
+                                    <span class="icon">
+                                        <i class="fas fa-plus"></i>
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="folderPermissions" class="mt-4">
+                        <!-- Folder permissions will be populated here -->
+                    </div>
+                </div>
+            </section>
+            <footer class="modal-card-foot">
+                <button class="button" id="closeModalBtn">Close</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div class="loading" style="display: none;">
+        <div class="box">
+            <span class="icon is-large has-text-primary">
+                <i class="fas fa-spinner fa-pulse fa-2x"></i>
+            </span>
+        </div>
+    </div>
+
+    <script>
+        // Check authentication
+        const token = localStorage.getItem('jwtToken');
+        if (!token) {
+            window.location.href = '/index.html';
+        }
+
+        // DOM Elements
+        const createGroupForm = document.getElementById('createGroupForm');
+        const groupsList = document.getElementById('groupsList');
+        const groupModal = document.getElementById('groupModal');
+        const modalGroupName = document.getElementById('modalGroupName');
+        const membersList = document.getElementById('membersList');
+        const folderSelect = document.getElementById('folderSelect');
+        const addFolderBtn = document.getElementById('addFolderBtn');
+        const folderPermissions = document.getElementById('folderPermissions');
+        const loading = document.querySelector('.loading');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+
+        // Current group being viewed
+        let currentGroupId = null;
+        let currentGroupName = null;
+
+        // Show loading spinner
+        function showLoading() {
+            loading.style.display = 'flex';
+        }
+
+        // Hide loading spinner
+        function hideLoading() {
+            loading.style.display = 'none';
+        }
+
+        // Create new group
+        createGroupForm.onsubmit = async (e) => {
+            e.preventDefault();
+            showLoading();
+
+            const groupName = document.getElementById('groupName').value;
+            const memberUsernames = document.getElementById('memberUsernames').value
+                .split('\n')
+                .map(username => username.trim())
+                .filter(username => username);
+
+            if (memberUsernames.length < 2) {
+                showNotification('Please enter at least 2 usernames', 'is-warning');
+                hideLoading();
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/groups/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        groupName,
+                        memberUsernames: memberUsernames // Explicitly name the parameter
+                    })
+                });
+
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    throw new Error(errorText);
+                }
+
+                const data = await res.json();
+                showNotification('Group created successfully!', 'is-success');
+                createGroupForm.reset();
+                loadGroups();
+            } catch (err) {
+                showNotification(err.message, 'is-danger');
+            } finally {
+                hideLoading();
+            }
+        };
+
+        // Load groups
+        async function loadGroups() {
+            showLoading();
+            try {
+                const res = await fetch('/api/show-group-I-created', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const groups = await res.json();
+
+                if (groups.length === 0) {
+                    // Show empty state
+                    groupsList.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fas fa-users-slash"></i>
+                            <p>You haven't created any groups yet.</p>
+                            <p class="mt-2">Create a new group to start sharing your folders with others.</p>
+                        </div>
+                    `;
+                } else {
+                    // Render groups
+                    groupsList.innerHTML = groups.map(group => {
+                        const memberCount = group.members.length;
+                        
+                        return `
+                            <div class="card group-card mb-4">
+                                <header class="card-header">
+                                    <p class="card-header-title">
+                                        <span class="icon mr-2">
+                                            <i class="fas fa-users"></i>
+                                        </span>
+                                        ${group.groupName}
+                                    </p>
+                                </header>
+                                <div class="card-content">
+                                    <div class="content">
+                                        <div class="group-members-preview">
+                                            ${group.members.slice(0, 5).map(member => `
+                                                <span class="tag is-info member-tag">
+                                                    <span class="icon is-small mr-1">
+                                                        <i class="fas fa-user"></i>
+                                                    </span>
+                                                    ${member.username}
+                                                </span>
+                                            `).join('')}
+                                            ${memberCount > 5 ? `
+                                                <span class="tag is-info member-tag">
+                                                    +${memberCount - 5} more
+                                                </span>
+                                            ` : ''}
+                                        </div>
+                                        
+                                        <div class="group-stats">
+                                            <div class="group-stat">
+                                                <strong>${memberCount}</strong>
+                                                Members
+                                            </div>
+                                            <div class="group-stat">
+                                                <strong id="folderCount-${group.groupId}">-</strong>
+                                                Folders
+                                            </div>
+                                        </div>
+                                        
+                                        <button class="button is-primary is-fullwidth mt-4" 
+                                                onclick="openGroupDetails('${group.groupId}', '${group.groupName}')">
+                                            <span class="icon">
+                                                <i class="fas fa-cog"></i>
+                                            </span>
+                                            <span>Manage Group</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                    
+                    // Load folder counts for each group
+                    groups.forEach(group => {
+                        fetchFolderCount(group.groupId);
+                    });
+                }
+            } catch (err) {
+                showNotification('Failed to load groups', 'is-danger');
+                groupsList.innerHTML = `
+                    <div class="notification is-warning">
+                        <p>Could not load your groups. Please try again later.</p>
+                    </div>
+                `;
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Fetch folder count for a group
+        async function fetchFolderCount(groupId) {
+            try {
+                const permsRes = await fetch(`/api/show-groups-permissions?groupId=${groupId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const permsData = await permsRes.json();
+                
+                const folderCount = Object.keys(permsData.permissions).length;
+                const countElement = document.getElementById(`folderCount-${groupId}`);
+                if (countElement) {
+                    countElement.textContent = folderCount;
+                }
+            } catch (err) {
+                console.error(`Failed to load folder count for group ${groupId}`, err);
+            }
+        }
+
+        // Open group details modal
+        async function openGroupDetails(groupId, groupName) {
+            currentGroupId = groupId;
+            currentGroupName = groupName;
+            modalGroupName.textContent = groupName;
+            showLoading();
+
+            try {
+                // Load group members
+                const membersRes = await fetch(`/api/groups/members/${groupId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const membersData = await membersRes.json();
+                
+                if (membersData.members.length === 0) {
+                    membersList.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fas fa-user-slash"></i>
+                            <p>This group has no members.</p>
+                        </div>
+                    `;
+                } else {
+                    membersList.innerHTML = membersData.members.map(member => `
+                        <div class="box">
+                            <div class="level">
+                                <div class="level-left">
+                                    <div class="level-item">
+                                        <span class="icon mr-2 has-text-info">
+                                            <i class="fas fa-user-circle"></i>
+                                        </span>
+                                        <span>${member.username}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+
+                // Load folder permissions
+                const permsRes = await fetch(`/api/show-groups-permissions?groupId=${groupId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const permsData = await permsRes.json();
+                
+                // Get all folders first
+                const foldersRes = await fetch('/api/my-folders', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const folders = await foldersRes.json();
+
+                if (folders.length === 0) {
+                    folderPermissions.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fas fa-folder-open"></i>
+                            <p>You don't have any folders to share.</p>
+                            <p class="mt-2">Create a folder first to share with this group.</p>
+                        </div>
+                    `;
+                } else {
+                    // Show all folders with their current permissions
+                    folderPermissions.innerHTML = await Promise.all(folders.map(async (folder) => {
+                        // Get current permissions for this folder
+                        const currentPermsRes = await fetch(`/api/groups/view-current-permissions/${groupId}/${folder.folderId}`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        const currentPerms = await currentPermsRes.json();
+                        
+                        return `
+                            <div class="box folder-permission">
+                                <div class="level">
+                                    <div class="level-left">
+                                        <div class="level-item">
+                                            <span class="icon mr-2 has-text-primary">
+                                                <i class="fas fa-folder"></i>
+                                            </span>
+                                            <span>${folder.folderName}</span>
+                                        </div>
+                                    </div>
+                                    <div class="level-right">
+                                        <div class="level-item">
+                                            <div class="field is-grouped">
+                                                <label class="checkbox mr-4">
+                                                    <input type="checkbox" 
+                                                           ${currentPerms.permissions.view ? 'checked' : ''}
+                                                           onchange="updateFolderPermission('${folder.folderId}', 'view', this.checked)">
+                                                    <span class="icon-text">
+                                                        <span class="icon is-small has-text-info">
+                                                            <i class="fas fa-eye"></i>
+                                                        </span>
+                                                        <span>View</span>
+                                                    </span>
+                                                </label>
+                                                <label class="checkbox mr-4">
+                                                    <input type="checkbox"
+                                                           ${currentPerms.permissions.download ? 'checked' : ''}
+                                                           onchange="updateFolderPermission('${folder.folderId}', 'download', this.checked)">
+                                                    <span class="icon-text">
+                                                        <span class="icon is-small has-text-success">
+                                                            <i class="fas fa-download"></i>
+                                                        </span>
+                                                        <span>Download</span>
+                                                    </span>
+                                                </label>
+                                                <label class="checkbox mr-4">
+                                                    <input type="checkbox"
+                                                           ${currentPerms.permissions.upload ? 'checked' : ''}
+                                                           onchange="updateFolderPermission('${folder.folderId}', 'upload', this.checked)">
+                                                    <span class="icon-text">
+                                                        <span class="icon is-small has-text-warning">
+                                                            <i class="fas fa-upload"></i>
+                                                        </span>
+                                                        <span>Upload</span>
+                                                    </span>
+                                                </label>
+                                                <label class="checkbox">
+                                                    <input type="checkbox"
+                                                           ${currentPerms.permissions.delete ? 'checked' : ''}
+                                                           onchange="updateFolderPermission('${folder.folderId}', 'delete', this.checked)">
+                                                    <span class="icon-text">
+                                                        <span class="icon is-small has-text-danger">
+                                                            <i class="fas fa-trash"></i>
+                                                        </span>
+                                                        <span>Delete</span>
+                                                    </span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    })).then(html => html.join(''));
+                }
+
+                // Update folder select dropdown
+                if (folders.length === 0) {
+                    folderSelect.innerHTML = `<option value="">No folders available</option>`;
+                    addFolderBtn.disabled = true;
+                } else {
+                    // Get folders that don't have permissions yet
+                    const foldersWithPermissions = await Promise.all(folders.map(async (folder) => {
+                        const currentPermsRes = await fetch(`/api/groups/view-current-permissions/${groupId}/${folder.folderId}`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        const currentPerms = await currentPermsRes.json();
+                        return {
+                            ...folder,
+                            hasPermissions: Object.values(currentPerms.permissions).some(v => v === true)
+                        };
+                    }));
+
+                    const availableFolders = foldersWithPermissions.filter(f => !f.hasPermissions);
+
+                    if (availableFolders.length === 0) {
+                        folderSelect.innerHTML = `<option value="">All folders have permissions</option>`;
+                        addFolderBtn.disabled = true;
+                    } else {
+                        folderSelect.innerHTML = `
+                            <option value="">Select a folder</option>
+                            ${availableFolders.map(folder => `
+                                <option value="${folder.folderId}">${folder.folderName}</option>
+                            `).join('')}
+                        `;
+                        addFolderBtn.disabled = false;
+                    }
+                }
+
+                // Show first tab by default
+                document.querySelectorAll('.tabs li').forEach((li, index) => {
+                    if (index === 0) {
+                        li.classList.add('is-active');
+                    } else {
+                        li.classList.remove('is-active');
+                    }
+                });
+                
+                document.querySelectorAll('.tab-content').forEach((content, index) => {
+                    content.style.display = index === 0 ? 'block' : 'none';
+                });
+
+                groupModal.classList.add('is-active');
+            } catch (err) {
+                showNotification('Failed to load group details', 'is-danger');
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Add folder permission
+        addFolderBtn.onclick = async () => {
+            const folderId = folderSelect.value;
+            if (!folderId) {
+                showNotification('Please select a folder', 'is-warning');
+                return;
+            }
+
+            showLoading();
+            try {
+                const res = await fetch(`/api/folders/${folderId}/groups/${currentGroupId}/permissions`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        view: true,
+                        download: false
+                    })
+                });
+
+                if (!res.ok) {
+                    throw new Error(await res.text());
+                }
+
+                showNotification('Folder permission added successfully', 'is-success');
+                openGroupDetails(currentGroupId, currentGroupName);
+            } catch (err) {
+                showNotification(err.message, 'is-danger');
+            } finally {
+                hideLoading();
+            }
+        };
+
+        // Update folder permission
+        async function updateFolderPermission(folderId, permission, value) {
+            showLoading();
+            try {
+                const res = await fetch(`/api/folders/${folderId}/groups/${currentGroupId}/permissions`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        [permission]: value
+                    })
+                });
+
+                if (!res.ok) {
+                    throw new Error(await res.text());
+                }
+
+                showNotification('Permission updated successfully', 'is-success');
+            } catch (err) {
+                showNotification(err.message, 'is-danger');
+                openGroupDetails(currentGroupId, currentGroupName); // Reload to reset checkboxes
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // Tab switching
+        document.querySelectorAll('.tabs a').forEach(tab => {
+            tab.onclick = (e) => {
+                e.preventDefault();
+                const tabName = e.target.closest('a').dataset.tab;
+                
+                // Update active tab
+                document.querySelectorAll('.tabs li').forEach(li => li.classList.remove('is-active'));
+                e.target.closest('li').classList.add('is-active');
+                
+                // Show selected content
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.style.display = 'none';
+                });
+                document.getElementById(`${tabName}Tab`).style.display = 'block';
+            };
+        });
+
+        // Close modal
+        document.querySelectorAll('.modal .delete, .modal-background, #closeModalBtn').forEach(el => {
+            el.onclick = () => {
+                groupModal.classList.remove('is-active');
+                loadGroups(); // Refresh the main list
+            };
+        });
+
+        // Show notification
+        function showNotification(message, type = 'is-info') {
+            // Remove any existing notifications first
+            document.querySelectorAll('.notification').forEach(note => note.remove());
+            
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.innerHTML = `
+                <button class="delete"></button>
+                <span class="icon-text">
+                    <span class="icon">
+                        <i class="fas ${type === 'is-danger' ? 'fa-exclamation-circle' : 
+                                       type === 'is-warning' ? 'fa-exclamation-triangle' : 
+                                       type === 'is-success' ? 'fa-check-circle' : 'fa-info-circle'}"></i>
+                    </span>
+                    <span>${message}</span>
+                </span>
+            `;
+            document.body.appendChild(notification);
+
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+
+            // Allow manual close
+            notification.querySelector('.delete').onclick = () => {
+                notification.remove();
+            };
+        }
+
+        // Logout
+        document.getElementById('logoutBtn').onclick = () => {
+            localStorage.removeItem('jwtToken');
+            window.location.href = '/index.html';
+        };
+
+        // Initial load
+        loadGroups();
+    </script>
+</body>
+</html>

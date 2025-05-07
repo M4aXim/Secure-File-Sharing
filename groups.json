@@ -1,0 +1,19 @@
+[
+  {
+    "groupId": "fc87d794a61fa7117ce79e51f45229c0",
+    "groupName": "Test",
+    "owner": "mmalbasa",
+    "members": [
+      "mmalbasa",
+      "maksimm"
+    ],
+    "invitedUsers": [
+      {
+        "invitationId": "728d12ebc3bc27404e1f6e73bb0191f1",
+        "username": "test",
+        "email": "test@gmail.com"
+      }
+    ],
+    "createdAt": "2025-05-07T15:13:01.801Z"
+  }
+]

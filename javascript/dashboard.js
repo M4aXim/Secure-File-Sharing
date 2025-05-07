@@ -590,3 +590,172 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('mfaTokenError').style.display = 'block';
     }
   }
+
+  // Show group creation modal
+  function showMakeGroupModal() {
+    // Reset form elements
+    document.getElementById('groupFolderSelect').innerHTML = '<option value="">-- Select a folder --</option>';
+    document.getElementById('groupNameInput').value = '';
+    document.getElementById('groupEmailsInput').value = '';
+    document.getElementById('folderSelectError').style.display = 'none';
+    document.getElementById('groupNameError').style.display = 'none';
+    document.getElementById('groupEmailsError').style.display = 'none';
+    document.getElementById('generalGroupError').style.display = 'none';
+    
+    // Show first step, hide success screen
+    document.getElementById('groupStep1').style.display = 'block';
+    document.getElementById('groupSuccess').style.display = 'none';
+    
+    // Load user's folders for selection
+    loadFoldersForGroupCreation();
+    
+    // Display the modal
+    document.getElementById('makeGroupModal').style.display = 'flex';
+  }
+  
+  // Hide the group creation modal
+  function hideMakeGroupModal() {
+    document.getElementById('makeGroupModal').style.display = 'none';
+  }
+  
+  // Load user's folders for the group creation dropdown
+  async function loadFoldersForGroupCreation() {
+    const token = localStorage.getItem('jwtToken');
+    if (!token) {
+      window.location.href = '/index.html';
+      return;
+    }
+    
+    try {
+      const response = await fetch('/api/my-folders', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to load folders');
+      }
+      
+      const folders = await response.json();
+      const select = document.getElementById('groupFolderSelect');
+      
+      if (folders.length === 0) {
+        select.innerHTML = '<option value="">No folders available</option>';
+        return;
+      }
+      
+      const options = folders.map(folder => 
+        `<option value="${folder.folderId}">${folder.folderName}</option>`
+      );
+      
+      select.innerHTML = '<option value="">-- Select a folder --</option>' + options.join('');
+    } catch (error) {
+      console.error('Error loading folders:', error);
+      document.getElementById('generalGroupError').textContent = 'Error loading folders. Please try again later.';
+      document.getElementById('generalGroupError').style.display = 'block';
+    }
+  }
+  
+  // Create a new group
+  async function createGroup() {
+    // Reset error messages
+    document.getElementById('folderSelectError').style.display = 'none';
+    document.getElementById('groupNameError').style.display = 'none';
+    document.getElementById('groupEmailsError').style.display = 'none';
+    document.getElementById('generalGroupError').style.display = 'none';
+    
+    // Get form values
+    const folderId = document.getElementById('groupFolderSelect').value;
+    const groupName = document.getElementById('groupNameInput').value.trim();
+    const emailsText = document.getElementById('groupEmailsInput').value.trim();
+    
+    // Validate inputs
+    let hasError = false;
+    
+    if (!folderId) {
+      document.getElementById('folderSelectError').textContent = 'Please select a folder';
+      document.getElementById('folderSelectError').style.display = 'block';
+      hasError = true;
+    }
+    
+    if (!groupName) {
+      document.getElementById('groupNameError').textContent = 'Please enter a group name';
+      document.getElementById('groupNameError').style.display = 'block';
+      hasError = true;
+    } else if (!/^[\w\- ]{3,50}$/.test(groupName)) {
+      document.getElementById('groupNameError').textContent = 'Group name should be 3-50 characters and contain only letters, numbers, spaces, and dashes';
+      document.getElementById('groupNameError').style.display = 'block';
+      hasError = true;
+    }
+    
+    // Process email addresses (split by newlines and clean)
+    const userEmails = emailsText
+      .split('\n')
+      .map(email => email.trim())
+      .filter(email => email.length > 0);
+    
+    if (userEmails.length < 2) {
+      document.getElementById('groupEmailsError').textContent = 'Please enter at least 2 email addresses';
+      document.getElementById('groupEmailsError').style.display = 'block';
+      hasError = true;
+    }
+    
+    // Check if emails are valid format
+    const invalidEmails = userEmails.filter(email => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+    if (invalidEmails.length > 0) {
+      document.getElementById('groupEmailsError').textContent = `Invalid email format: ${invalidEmails.join(', ')}`;
+      document.getElementById('groupEmailsError').style.display = 'block';
+      hasError = true;
+    }
+    
+    if (hasError) return;
+    
+    // Submit to server
+    const token = localStorage.getItem('jwtToken');
+    if (!token) {
+      window.location.href = '/index.html';
+      return;
+    }
+    
+    try {
+      const response = await fetch('/api/folders/make-a-group', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          folderId,
+          groupName,
+          userEmails
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        document.getElementById('generalGroupError').textContent = data.error || 'Failed to create group';
+        document.getElementById('generalGroupError').style.display = 'block';
+        return;
+      }
+      
+      // Show success screen
+      document.getElementById('groupStep1').style.display = 'none';
+      document.getElementById('groupSuccess').style.display = 'block';
+      
+      // Set success message
+      let successMessage = `Group "${groupName}" created successfully!`;
+      if (data.notFoundUsers && data.notFoundUsers.length > 0) {
+        successMessage += ` Note: ${data.notFoundUsers.length} email(s) could not be found in the system.`;
+      }
+      document.getElementById('groupSuccessMessage').textContent = successMessage;
+      
+      // Log success in console
+      console.log('Group created:', data);
+    } catch (error) {
+      console.error('Error creating group:', error);
+      document.getElementById('generalGroupError').textContent = 'An error occurred while creating the group';
+      document.getElementById('generalGroupError').style.display = 'block';
+    }
+  }

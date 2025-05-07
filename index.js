@@ -80,6 +80,7 @@ const USERS_FILE    = path.join(__dirname, 'users.json');
 const FOLDERS_FILE  = path.join(__dirname, 'folders.json');
 const FOLDERS_DIR   = path.join(__dirname, 'folders');
 const AUDIT_LOG     = path.join(__dirname, 'audit.log');
+const GROUPS_FILE    = path.join(__dirname, 'groups.json');
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 // --- PLUGINS ---
@@ -90,7 +91,7 @@ fastify.register(require('@fastify/sensible'));
 fastify.register(require('@fastify/jwt'),     { secret: JWT_SECRET, sign: { expiresIn: TOKEN_EXPIRATION } });
 fastify.register(require('@fastify/rate-limit'), { max: RATE_LIMIT_MAX, timeWindow: RATE_LIMIT_WIN });
 
-// Serve static files without requiring “.html” in URLs
+// Serve static files without requiring ".html" in URLs
 fastify.register(require('@fastify/static'), {
   root: __dirname,
   prefix: '/',
@@ -154,6 +155,14 @@ async function ensureDataFiles() {
   } catch {
     await fsPromises.mkdir(FOLDERS_DIR, { recursive: true });
     fastify.log.info('Created folders directory');
+  }
+  try {
+    const GROUPS_FILE = path.join(__dirname, 'groups.json');
+    await fsPromises.access(GROUPS_FILE);
+  } catch {
+    await fsPromises.writeFile(GROUPS_FILE, JSON.stringify([], null, 2));
+    fastify.log.info('Created groups.json');
+
   }
   try {
     await fsPromises.access(AUDIT_LOG);
@@ -358,10 +367,11 @@ fastify.post('/api/verify-mfa', { preHandler: [fastify.authenticate] }, async (r
 
 // GET /api/my-folders
 fastify.get('/api/my-folders', { preHandler: [fastify.authenticate] }, async (req) => {
-  const raw     = await fsPromises.readFile(FOLDERS_FILE, 'utf8');
-  const folders = JSON.parse(raw);
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
   return folders.filter(f => f.owner === req.user.username);
 });
+
+
 
 // POST /api/create-folder
 fastify.post('/api/create-folder', { preHandler: [fastify.authenticate] }, async (req, reply) => {
@@ -380,14 +390,17 @@ fastify.post('/api/create-folder', { preHandler: [fastify.authenticate] }, async
   }
 
   const folderId = crypto.randomBytes(16).toString('hex');
-  folders.push({
+  const newFolder = {
     folderName,
     folderId,
     owner: req.user.username,
     createdAt: new Date().toISOString(),
     friendPermissions: {},
+    groupPermissions: {},
     isPublic: false
-  });
+  };
+
+  folders.push(newFolder);
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
 
   await logActivity(req, 'create-folder', { folderName, folderId });
@@ -430,38 +443,52 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
 });
 
 // GET /api/generate-download-token
-fastify.get('/api/generate-download-token', async (req, reply) => {
+fastify.get('/api/generate-download-token', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const folderId = req.query.folderId || req.query.folderID;
   const filename = req.query.filename;
   if (!folderId || !filename) return reply.badRequest('Missing params');
 
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const meta    = folders.find(f => f.folderId === folderId);
+  const meta = folders.find(f => f.folderId === folderId);
   if (!meta) return reply.notFound('Folder not found');
 
-  // Public folders can always generate a token
-  if (!meta.isPublic) {
-    try {
-      await req.jwtVerify();
-    } catch {
-      return reply.unauthorized('Invalid or missing token');
+  let allowed = false;
+  const isOwner = meta.owner === req.user.username;
+
+  if (meta.isPublic || isOwner) {
+    allowed = true;
+  } else {
+    const friendPerms = (meta.friendPermissions || {})[req.user.username];
+    if (friendPerms?.download) allowed = true;
+
+    if (!allowed) {
+      const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+      const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
+      const groupPermOk = myGroupIds.some(id => meta.groupPermissions?.[id]?.download === true);
+      if (groupPermOk) allowed = true;
     }
-    const isOwner = meta.owner === req.user.username;
-    const perms   = (meta.friendPermissions || {})[req.user.username];
-    if (!isOwner && !perms?.download) return reply.forbidden('Access denied');
   }
+
+  if (!allowed) return reply.forbidden('Access denied');
 
   try {
     await s3.send(new HeadObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
-      Key:    `folders/${folderId}/${filename}`
+      Key: `folders/${folderId}/${filename}`
     }));
-  } catch {
-    return reply.notFound('File not found');
-  }
 
-  return { token: makeDownloadToken(folderId, filename) };
+    const token = makeDownloadToken(folderId, filename);
+    await logActivity(req, 'generate-download-token', { folderId, filename });
+    return { token };
+  } catch (err) {
+    fastify.log.error('Error generating download token:', err);
+    if (err.name === 'NotFound') {
+      return reply.notFound('File not found');
+    }
+    return reply.internalServerError('Failed to generate download token');
+  }
 });
+
 
 // GET /api/download-file
 fastify.get('/api/download-file', async (req, reply) => {
@@ -513,71 +540,86 @@ fastify.get('/api/open-file', async (req, reply) => {
   const meta    = folders.find(f => f.folderId === folderId);
   if (!meta) return reply.notFound('Folder not found');
 
-  // Only public folders or owners can open inline
-  if (!meta.isPublic) {
-    try {
-      await req.jwtVerify();
-    } catch {
-      return reply.unauthorized('Invalid or missing token');
+  let allowed = false;
+  const isOwner = meta.owner === req.user?.username;
+
+  if (meta.isPublic || isOwner) {
+    allowed = true;
+  } else {
+    try { await req.jwtVerify(); } catch { return reply.unauthorized('Invalid or missing token'); }
+
+    const friendPerms = (meta.friendPermissions || {})[req.user.username];
+    if (friendPerms?.download) allowed = true;
+
+    if (!allowed) {
+      const groups      = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+      const myGroupIds  = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
+      const groupPermOk = myGroupIds.some(id => meta.groupPermissions?.[id]?.download === true);
+      if (groupPermOk) allowed = true;
     }
-    if (meta.owner !== req.user.username) return reply.forbidden('Access denied');
   }
 
-  const ext      = path.extname(filename).toLowerCase();
-  const mimeType = ({
-    '.txt': 'text/plain', '.pdf': 'application/pdf',
-    '.doc': 'application/msword', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    '.jpg': 'image/jpeg', '.jpeg':'image/jpeg',
-    '.png':'image/png', '.gif':'image/gif',
-    '.mp4':'video/mp4', '.mp3':'audio/mpeg'
-  })[ext] || 'application/octet-stream';
+  if (!allowed) return reply.forbidden('Access denied');
 
-  const command = new GetObjectCommand({
+  const ext      = path.extname(filename).toLowerCase();
+  const mimeType = mime.lookup(ext) || 'application/octet-stream';
+
+  const command  = new GetObjectCommand({
     Bucket: process.env.S3_BUCKET_NAME,
     Key:    `folders/${folderId}/${filename}`
   });
   const response = await s3.send(command);
-  const stream   = response.Body;
 
-  await logActivity(req, 'open-file', { folderId, filename });
   reply.header('Content-Type', mimeType);
   reply.header('Content-Disposition', `inline; filename="${filename}"`);
-  return reply.send(stream);
+  return reply.send(response.Body);
 });
-
 // GET /api/view-file/:folderId/*
-fastify.get('/api/view-file/:folderId/*', async (req, reply) => {
+// GET /api/view-file/:folderId/*
+fastify.get('/api/view-file/:folderId/*', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { folderId } = req.params;
-  const filename     = req.params['*'];
-  const key          = `folders/${folderId}/${filename}`;
+  const filename = req.params['*'];
+  const key = `folders/${folderId}/${filename}`;
 
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const meta    = folders.find(f => f.folderId === folderId);
+  const meta = folders.find(f => f.folderId === folderId);
   if (!meta) return reply.notFound('Folder not found');
 
-  // Public folders are open to inline viewing
-  if (!meta.isPublic) {
-    try {
-      await req.jwtVerify();
-    } catch {
-      return reply.unauthorized('Invalid or missing token');
+  let allowed = false;
+  const isOwner = meta.owner === req.user.username;
+
+  if (meta.isPublic || isOwner) {
+    allowed = true;
+  } else {
+    const friendPerms = (meta.friendPermissions || {})[req.user.username];
+    if (friendPerms?.view || friendPerms?.download) allowed = true;
+
+    if (!allowed) {
+      const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+      const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
+      const groupPermOk = myGroupIds.some(id => meta.groupPermissions?.[id]?.view === true);
+      if (groupPermOk) allowed = true;
     }
-    const isOwner = meta.owner === req.user.username;
-    const perms   = (meta.friendPermissions||{})[req.user.username];
-    if (!isOwner && !perms?.download) return reply.forbidden('Access denied');
   }
+
+  if (!allowed) return reply.forbidden('Access denied');
 
   try {
     await s3.send(new HeadObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key }));
-    const command  = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key });
-    const response = await s3.send(command);
-    const stream   = response.Body;
-    await logActivity(req, 'view-file', { folderId, filename });
-    reply.header('Content-Type', mime.lookup(filename) || 'application/octet-stream');
+    const response = await s3.send(new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key }));
+    
+    const mimeType = mime.lookup(filename) || 'application/octet-stream';
+    reply.header('Content-Type', mimeType);
     reply.header('Content-Disposition', 'inline');
-    return reply.send(stream);
-  } catch {
-    return reply.notFound('File not found or access denied');
+    
+    await logActivity(req, 'view-file', { folderId, filename });
+    return reply.send(response.Body);
+  } catch (err) {
+    fastify.log.error('Error accessing file:', err);
+    if (err.name === 'NotFound') {
+      return reply.notFound('File not found');
+    }
+    return reply.internalServerError('Failed to access file');
   }
 });
 
@@ -611,9 +653,224 @@ fastify.delete('/api/delete-file/:folderId/*', { preHandler: [fastify.authentica
 // GET /api/shared-folders
 fastify.get('/api/shared-folders', { preHandler: [fastify.authenticate] }, async (req) => {
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  return folders.filter(f =>
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+
+  // Get folders shared directly with user
+  const friendShares = folders.filter(f =>
     f.friendPermissions && f.friendPermissions[req.user.username]
-  ).map(f => ({ folderId: f.folderId, folderName: f.folderName }));
+  );
+
+  // Get folders shared through groups
+  const myGroupIds = groups
+    .filter(g => g.members.includes(req.user.username))
+    .map(g => g.groupId);
+
+  const groupShares = folders.filter(f =>
+    myGroupIds.some(id => f.groupPermissions?.[id])
+  );
+
+  // Combine and deduplicate
+  const combined = [...friendShares, ...groupShares]
+    .reduce((map, f) => map.set(f.folderId, f), new Map())
+    .values();
+
+  return Array.from(combined).map(f => ({
+    folderId: f.folderId,
+    folderName: f.folderName,
+    owner: f.owner,
+    isPublic: f.isPublic || false
+  }));
+});
+
+fastify.post('/api/groups/create', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { groupName, memberUsernames } = req.body;
+
+  // ----- validation -----
+  if (!groupName || typeof groupName !== 'string')
+    return reply.badRequest('groupName is required');
+  if (!/^[\w\- ]{3,50}$/.test(groupName.trim()))
+    return reply.badRequest('Invalid groupName');
+  if (!Array.isArray(memberUsernames) || memberUsernames.length < 2)
+    return reply.badRequest('At least 2 other people are required');
+
+  // make usernames unique & include owner
+  const uniqueUsernames = Array.from(new Set(memberUsernames.map(String))).filter(Boolean);
+  if (!uniqueUsernames.includes(req.user.username)) uniqueUsernames.push(req.user.username);
+
+  // fetch user docs
+  const users = await usersColl.find({ username: { $in: uniqueUsernames } }).toArray();
+  if (users.length !== uniqueUsernames.length)
+    return reply.notFound('One or more users not found');
+
+  // build group object
+  const groupId = crypto.randomBytes(16).toString('hex');
+  const owner   = req.user.username;
+  const invited = users
+    .filter(u => u.username !== owner)
+    .map(u => ({ invitationId: crypto.randomBytes(16).toString('hex'), username: u.username, email: u.email }));
+
+  const groupDoc = {
+    groupId,
+    groupName: groupName.trim(),
+    owner,
+    members:   [owner],           // owner is always member
+    invitedUsers: invited,        // pending invitations
+    createdAt: new Date().toISOString()
+  };
+
+  // persist to groups.json
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  groups.push(groupDoc);
+  await fsPromises.writeFile(GROUPS_FILE, JSON.stringify(groups, null, 2));
+
+  // send email invitations (best‑effort, fire‑and‑forget)
+  for (const inv of invited) {
+    transporter.sendMail({
+      from: `"FileShare Groups" <${process.env.EMAIL_USER}>`,
+      to:   inv.email,
+      subject: `Group Invitation: ${groupName}`,
+      text:
+`Hello ${inv.username},
+
+${owner} has invited you to join the group "${groupName}" on FileShare.
+
+Accept: http://localhost:${PORT}/api/groups/accept/${inv.invitationId}
+Reject: http://localhost:${PORT}/api/groups/reject/${inv.invitationId}
+
+Thank you.`
+    }, err => { if (err) fastify.log.error('Group invitation email:', err); });
+  }
+
+  await logActivity(req, 'create-group', { groupId, groupName });
+  return reply.code(201).send({ message: 'Group created; invitations sent', groupId });
+});
+
+
+fastify.get('/api/groups/accept/:invitationId', async (req, reply) => {
+  const { invitationId } = req.params;
+
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  const group  = groups.find(g => g.invitedUsers.some(i => i.invitationId === invitationId));
+  if (!group) return reply.notFound('Invitation not found');
+
+  // Get the invitee username from the invitation
+  const invite = group.invitedUsers.find(i => i.invitationId === invitationId);
+  const invitedUsername = invite.username;
+
+  // move from invited → members
+  group.invitedUsers = group.invitedUsers.filter(i => i.invitationId !== invitationId);
+  if (!group.members.includes(invitedUsername)) {s
+    group.members.push(invitedUsername);
+  }
+
+  await fsPromises.writeFile(GROUPS_FILE, JSON.stringify(groups, null, 2));
+  await logActivity(req, 'accept-group-invite', { groupId: group.groupId, username: invitedUsername });
+
+  return reply.send({ message: `Joined group "${group.groupName}"` });
+});
+
+fastify.get('/api/groups/reject/:invitationId', async (req, reply) => {
+  const { invitationId } = req.params;
+
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  const group  = groups.find(g => g.invitedUsers.some(i => i.invitationId === invitationId));
+  if (!group) return reply.notFound('Invitation not found');
+
+  // verify invitee matches requester
+  const invite = group.invitedUsers.find(i => i.invitationId === invitationId);
+  if (invite.username !== req.user.username) {
+    return reply.forbidden("You are not this invitation's recipient");
+  }
+
+  group.invitedUsers = group.invitedUsers.filter(i => i.invitationId !== invitationId);
+  await fsPromises.writeFile(GROUPS_FILE, JSON.stringify(groups, null, 2));
+  await logActivity(req, 'reject-group-invite', { groupId: group.groupId });
+
+  return reply.send({ message: 'Invitation rejected' });
+});
+
+fastify.get('/api/groups/members/:groupId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { groupId } = req.params;
+  if (!groupId) return reply.badRequest('Missing groupId');
+
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  const group  = groups.find(g => g.groupId === groupId);
+  if (!group) return reply.notFound('Group not found');
+
+  const members = group.members.map(username => ({ username }));
+  return { members };
+});
+
+fastify.get('/api/groups/view-current-permissions/:groupID/:folderID', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { groupID, folderID } = req.params;
+  if (!groupID || !folderID) return reply.badRequest('Missing groupID or folderID');
+
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  const group  = groups.find(g => g.groupId === groupID);
+  if (!group) return reply.notFound('Group not found');
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder = folders.find(f => f.folderId === folderID);
+  if (!folder) return reply.notFound('Folder not found');
+
+  const permissions = folder.groupPermissions?.[groupID] || {};
+  return { permissions };
+});
+
+
+
+fastify.put('/api/folders/:folderId/groups/:groupId/permissions',
+  { preHandler: [fastify.authenticate] },
+  async (req, reply) => {
+
+  const { folderId, groupId }          = req.params;
+  const { view, download, upload, delete: delete_ } = req.body;          // booleans
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder  = folders.find(f => f.folderId === folderId);
+  if (!folder) return reply.notFound('Folder not found');
+
+  // Only folder owner can change group permissions
+  if (folder.owner !== req.user.username)
+    return reply.forbidden('Only owner can set permissions');
+
+  // Ensure group exists
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  const group  = groups.find(g => g.groupId === groupId);
+  if (!group) return reply.notFound('Group not found');
+
+  folder.groupPermissions = folder.groupPermissions || {};
+  folder.groupPermissions[groupId] = {
+    view:     view     !== undefined ? !!view     : (folder.groupPermissions[groupId]?.view     || false),
+    download: download !== undefined ? !!download : (folder.groupPermissions[groupId]?.download || false),
+    upload:   upload   !== undefined ? !!upload   : (folder.groupPermissions[groupId]?.upload   || false),
+    delete:   delete_  !== undefined ? !!delete_  : (folder.groupPermissions[groupId]?.delete   || false)
+  };
+
+  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+  await logActivity(req, 'update-group-permissions', { folderId, groupId });
+
+  return reply.send({ message: 'Group permissions updated' });
+});
+
+fastify.get('/api/show-group-I-created', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  const myGroups = groups.filter(g => g.owner === req.user.username);
+
+  return myGroups.map(group => ({
+    groupId: group.groupId,
+    groupName: group.groupName,
+    members: group.members.map(username => ({ username }))
+  }));
+});
+fastify.get('/api/show-groups-permissions', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { groupId } = req.query;
+  if (!groupId) return reply.badRequest('Missing groupId');
+
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  const group  = groups.find(g => g.groupId === groupId);
+  if (!group) return reply.notFound('Group not found');
+
+  const permissions = group.groupPermissions || {};
+  return { permissions };
 });
 
 fastify.post('/api/add-friend', { preHandler: [fastify.authenticate] }, async (req, reply) => {
@@ -996,38 +1253,50 @@ fastify.delete('/api/staff/folders/:folderId/friends/:friendUsername', { preHand
   return reply.send({ message: `User ${friendUsername} removed from folder` });
 });
 
-// Scan folder contents metadata (staff)
-fastify.get('/api/folder-contents', async (req, reply) => {
+// Scan folder contents metadata
+fastify.get('/api/folder-contents', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const folderId = req.query.folderId || req.query.folderID;
   if (!folderId) return reply.badRequest('folderId is required');
 
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const meta    = folders.find(f => f.folderId === folderId);
+  const meta = folders.find(f => f.folderId === folderId);
   if (!meta) return reply.notFound('Folder not found');
 
-  // Public folders are open to everyone
-  if (!meta.isPublic) {
-    try {
-      await req.jwtVerify();
-    } catch {
-      return reply.unauthorized('Invalid or missing token');
+  let allowed = false;
+  const isOwner = meta.owner === req.user.username;
+
+  if (meta.isPublic || isOwner) {
+    allowed = true;
+  } else {
+    const friendPerms = (meta.friendPermissions || {})[req.user.username];
+    if (friendPerms?.view || friendPerms?.download) allowed = true;
+
+    if (!allowed) {
+      const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+      const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
+      const groupPermOk = myGroupIds.some(id => meta.groupPermissions?.[id]?.view === true);
+      if (groupPermOk) allowed = true;
     }
-    const isOwner = meta.owner === req.user.username;
-    const perms   = (meta.friendPermissions || {})[req.user.username];
-    if (!isOwner && !perms) return reply.forbidden('Access denied');
   }
 
-  const data = await s3.send(new ListObjectsV2Command({
-    Bucket: process.env.S3_BUCKET_NAME,
-    Prefix: `folders/${folderId}/`
-  }));
+  if (!allowed) return reply.forbidden('Access denied');
 
-  return (data.Contents || []).map(obj => ({
-    filename:     obj.Key.slice(`folders/${folderId}/`.length),
-    size:         obj.Size,
-    lastModified: obj.LastModified,
-    type:         path.extname(obj.Key)
-  }));
+  try {
+    const data = await s3.send(new ListObjectsV2Command({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Prefix: `folders/${folderId}/`
+    }));
+
+    return (data.Contents || []).map(obj => ({
+      filename: obj.Key.slice(`folders/${folderId}/`.length),
+      size: obj.Size,
+      lastModified: obj.LastModified,
+      type: path.extname(obj.Key)
+    }));
+  } catch (err) {
+    fastify.log.error('Error listing folder contents:', err);
+    return reply.internalServerError('Failed to list folder contents');
+  }
 });
 
 // Flag a folder
@@ -1250,11 +1519,14 @@ fastify.post('/api/make-my-folder-public/:folderId', { preHandler: [fastify.auth
   const { folderId } = req.params;
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
   const folder = folders.find(f => f.folderId === folderId);
+  
   if (!folder) return reply.notFound('Folder not found');
   if (folder.owner !== req.user.username) return reply.forbidden('Only owner can make folder public');
+  
   folder.isPublic = true;
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
   await logActivity(req, 'make-folder-public', { folderId });
+  
   return reply.send({ message: 'Folder is now public' });
 });
 
@@ -1307,9 +1579,9 @@ fastify.get('/api/curl/cats', async (req, reply) => {
 fastify.get('/api/is-folder-public/:folderId', async (req, reply) => {
   const { folderId } = req.params;
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const folder  = folders.find(f => f.folderId === folderId);
+  const folder = folders.find(f => f.folderId === folderId);
   if (!folder) return reply.notFound('Folder not found');
-  return { isPublic: folder.isPublic };
+  return { isPublic: folder.isPublic || false };
 });
 
 
