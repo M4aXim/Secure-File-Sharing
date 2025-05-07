@@ -211,14 +211,6 @@ POST   /api/staff/reset-password/:username
 
 ---
 
-## 🛠️ Customization Tips
-* Swap the filesystem backend with S3 or Google Cloud Storage.
-* Theme the UI with custom CSS for organizational branding.
-* Add 2FA or CAPTCHA for extra login security.
-* Extend staff privileges with more granular permission levels.
-
----
-
 ## 👨‍👩‍👧‍👦 Ideal Use Cases
 * Community centers sharing local event files and photos
 * Religious groups organizing sermons, prayers, or bulletins

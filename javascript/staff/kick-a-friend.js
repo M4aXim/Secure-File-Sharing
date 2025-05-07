@@ -44,4 +44,4 @@ document.getElementById('remove-friend-form').addEventListener('submit', async (
     }
     
     statusMessage.classList.remove('hidden');
-});
+})

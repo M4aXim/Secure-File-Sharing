@@ -20,7 +20,9 @@ const nodemailer         = require('nodemailer');
 const os                 = require('os');
 const mime               = require('mime-types');
 const { MongoClient }    = require('mongodb');
-const fetch = require('node-fetch');
+const fetch              = require('node-fetch');
+const speakeasy          = require('speakeasy');
+const qrcode             = require('qrcode');
 
 const fastify = fastifyLib({
   logger: { level: process.env.LOG_LEVEL || 'info' }
@@ -56,6 +58,7 @@ const RATE_LIMIT_WIN   = process.env.RATE_LIMIT_WINDOW || '1 minute';
 const BCC_LIST         = process.env.BCC
   ? process.env.BCC.split(',').map(addr => addr.trim())
   : [];
+const MFA_ISSUER       = process.env.MFA_ISSUER || 'FileShare';
 
 if (!JWT_SECRET) {
   fastify.log.error('Missing JWT_SECRET in .env');
@@ -219,7 +222,11 @@ fastify.post('/api/register', async (req, reply) => {
       email,
       role:      'user',
       createdAt: new Date().toISOString(),
-      originalIp: ip
+      originalIp: ip,
+      mfa: {
+        enabled: false,
+        secret: null
+      }
     });
 
     await logActivity(req, 'register', { username, email });
@@ -233,7 +240,7 @@ fastify.post('/api/register', async (req, reply) => {
 // POST /api/login
 fastify.post('/api/login', async (req, reply) => {
   const ip = req.ip || req.socket.remoteAddress || 'unknown';
-  const { username, password } = req.body;
+  const { username, password, token: mfaToken } = req.body;
   if (!username || !password) {
     return reply.code(400).send({ error: 'Missing credentials' });
   }
@@ -248,6 +255,25 @@ fastify.post('/api/login', async (req, reply) => {
       return reply.code(403).send({ error: 'Account blocked due to IP ban' });
     }
 
+    // ensure mfa object exists
+    user.mfa = user.mfa || { enabled: false, secret: null };
+
+    // If MFA is enabled, require and verify token
+    if (user.mfa.enabled) {
+      if (!mfaToken) {
+        return reply.code(206).send({ error: 'MFA token required' });
+      }
+      const verified = speakeasy.totp.verify({
+        secret:   user.mfa.secret,
+        encoding: 'base32',
+        token:    mfaToken,
+        window:   1
+      });
+      if (!verified) {
+        return reply.code(401).send({ error: 'Invalid MFA token' });
+      }
+    }
+
     const token = fastify.jwt.sign({ username, role: user.role });
     await logActivity(req, 'login', { username });
     return reply.send({
@@ -256,7 +282,8 @@ fastify.post('/api/login', async (req, reply) => {
       user: {
         username: user.username,
         email:    user.email,
-        role:     user.role
+        role:     user.role,
+        mfaEnabled: user.mfa.enabled
       }
     });
   } catch (err) {
@@ -265,9 +292,68 @@ fastify.post('/api/login', async (req, reply) => {
   }
 });
 
+
 // GET /api/verify-token
 fastify.get('/api/verify-token', { preHandler: [fastify.authenticate] }, async () => {
   return { message: 'Token is valid' };
+});
+
+// POST /api/setup-mfa
+fastify.post('/api/setup-mfa', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const username = req.user.username;
+  const user = await usersColl.findOne({ username });
+  if (user.mfa && user.mfa.enabled) {
+    return reply.badRequest('MFA already enabled');
+  }
+
+  const secret = speakeasy.generateSecret({ length: 20 });
+  const otpauth = speakeasy.otpauthURL({
+    secret: secret.base32,
+    label:  `${MFA_ISSUER}:${username}`,
+    issuer: MFA_ISSUER,
+    encoding: 'base32'
+  });
+
+  await usersColl.updateOne(
+    { username },
+    { $set: { 'mfa.secret': secret.base32, 'mfa.enabled': false } }
+  );
+
+  const qrCode = await qrcode.toDataURL(otpauth);
+  await logActivity(req, 'setup-mfa');
+  reply.send({ otpauth_url: otpauth, qrCode });
+});
+
+// POST /api/verify-mfa
+fastify.post('/api/verify-mfa', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { token: mfaToken } = req.body;
+  if (!mfaToken) {
+    return reply.badRequest('MFA token is required');
+  }
+  const username = req.user.username;
+  const user = await usersColl.findOne({ username });
+  if (!user.mfa || !user.mfa.secret) {
+    return reply.badRequest('MFA not setup');
+  }
+
+  const verified = speakeasy.totp.verify({
+    secret: user.mfa.secret,
+    encoding: 'base32',
+    token: mfaToken,
+    window: 1
+  });
+
+  if (!verified) {
+    return reply.code(401).send({ error: 'Invalid MFA token' });
+  }
+
+  await usersColl.updateOne(
+    { username },
+    { $set: { 'mfa.enabled': true } }
+  );
+
+  await logActivity(req, 'enable-mfa');
+  reply.send({ message: 'MFA enabled successfully' });
 });
 
 // GET /api/my-folders
@@ -660,7 +746,6 @@ fastify.put('/api/folders/:folderId/friends/:friendUsername/permissions', { preH
 });
 
 // POST /api/change-password/:email
-// POST /api/change-password/:email
 fastify.post('/api/change-password/:email', async (req, reply) => {
   const email = req.params.email;
 
@@ -855,7 +940,11 @@ fastify.post('/api/owner/make-staff-account', { preHandler: [fastify.authenticat
       email,
       role:      'staff',
       createdAt: new Date().toISOString(),
-      originalIp: req.ip || req.socket.remoteAddress || 'unknown'
+      originalIp: req.ip || req.socket.remoteAddress || 'unknown',
+      mfa: {
+        enabled: false,
+        secret: null
+      }
     });
     await logActivity(req, 'make-staff-account', { username, email });
     return reply.code(201).send({ message: 'Staff account created successfully' });
@@ -870,7 +959,6 @@ fastify.post('/api/owner/make-staff-account', { preHandler: [fastify.authenticat
 // View all pending invitations
 fastify.get('/api/staff/invitations', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-
   const pending = folders.flatMap(f =>
     (Array.isArray(f.invitedUsers) ? f.invitedUsers : []).map(invite => ({
       folderId:        f.folderId,
@@ -880,10 +968,8 @@ fastify.get('/api/staff/invitations', { preHandler: [fastify.authenticate, fasti
       invitationId:    invite.invitationId
     }))
   );
-
   return pending;
 });
-
 
 // Remove a pending invitation
 fastify.delete('/api/staff/invitations/:invitationId', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
@@ -1325,6 +1411,28 @@ fastify.get('/api/staff/stats/recent-uploads', { preHandler: [fastify.authentica
   return { recentUploads: count };
 });
 
+fastify.delete('/api/staff/mfa/disable', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const { username } = req.body;
+  if (!username) return reply.badRequest('Username is required');
+  
+  try {
+    const result = await usersColl.updateOne(
+      { username: username }, 
+      { $set: { 'mfa.enabled': false, 'mfa.secret': null } }
+    );
+    
+    if (result.matchedCount === 0) {
+      return reply.notFound('User not found');
+    }
+    
+    await logActivity(req, 'staff-disable-mfa', { targetUsername: username });
+    return reply.send({ message: 'MFA disabled successfully for user' });
+  } catch (err) {
+    fastify.log.error('Error disabling MFA:', err);
+    return reply.internalServerError('Failed to disable MFA');
+  }
+});
+
 // DELETE /api/owner/delete-account
 fastify.delete('/api/owner/delete-account', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { targetUsername, reason } = req.body;
@@ -1433,7 +1541,6 @@ fastify.get('/api/recommended-files', { preHandler: [fastify.authenticate] }, as
     allFiles = allFiles.concat(files);
   }
 
-  // Short-circuit fallback if no files
   if (allFiles.length === 0) return { recommended: [] };
 
   // Prepare AI input
@@ -1570,9 +1677,8 @@ async function reviewFilesForViolations() {
   }
 }
 
-
-setInterval(reviewFilesForViolations, 10 * 60 * 60 * 1000);
-reviewFilesForViolations();
+// setInterval(reviewFilesForViolations, 10 * 60 * 60 * 1000);
+// reviewFilesForViolations();
 
 fastify.get('/api/health', async (req, reply) => {
   const health = {
@@ -1581,9 +1687,6 @@ fastify.get('/api/health', async (req, reply) => {
     s3: 'OK',
     timestamp: new Date().toISOString()
   };
-
-
-  
 
   // Check MongoDB connection
   try {
@@ -1621,13 +1724,11 @@ fastify.setNotFoundHandler((req, reply) => {
     return reply.callNotFound();
   }
 
-  // “Pretty” SPA routes without an extension → feed the SPA
   const hasExt = path.extname(req.raw.url) !== '';
   if (!hasExt) {
     return reply.sendFile('index.html');
   }
 
-  // Everything else (missing asset, bad URL, etc.) → custom 404 page
   return reply.code(404).type('text/html').sendFile('404.html');
 });
 

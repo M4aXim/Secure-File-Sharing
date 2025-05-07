@@ -459,3 +459,134 @@ document.addEventListener('DOMContentLoaded', () => {
   function goToStaffDashboard() {
     window.location.href = '/staff/Hello.html';
   }
+  
+  // MFA related functions
+  
+  // Show the MFA setup modal
+  function showSetupMFAModal() {
+    // Reset any previous content
+    document.getElementById('mfaStep1').style.display = 'block';
+    document.getElementById('mfaStep2').style.display = 'none';
+    document.getElementById('mfaSuccess').style.display = 'none';
+    document.getElementById('mfaTokenInput').value = '';
+    document.getElementById('mfaTokenError').style.display = 'none';
+    
+    // Show the modal
+    document.getElementById('setupMFAModal').style.display = 'flex';
+    
+    // Fetch MFA setup data from the server
+    fetchMFASetupData();
+  }
+  
+  // Hide the MFA setup modal
+  function hideMFAModal() {
+    document.getElementById('setupMFAModal').style.display = 'none';
+  }
+  
+  // Fetch MFA setup data from the server
+  async function fetchMFASetupData() {
+    const token = localStorage.getItem('jwtToken');
+    if (!token) {
+      window.location.href = '/index.html';
+      return;
+    }
+    
+    try {
+      const response = await fetch('/api/setup-mfa', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})      
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (errorData.message === 'MFA already enabled') {
+          alert('MFA is already enabled for your account.');
+          hideMFAModal();
+        } else {
+          throw new Error(errorData.message || 'Error setting up MFA');
+        }
+        return;
+      }
+      
+      const data = await response.json();
+      
+      // Display the QR code image
+      document.getElementById('qrCodeImage').src = data.qrCode;
+      
+      // Extract and display the secret key
+      const secretMatch = data.otpauth_url.match(/secret=([A-Z0-9]+)/);
+      if (secretMatch && secretMatch[1]) {
+        document.getElementById('secretKey').textContent = secretMatch[1];
+      }
+      
+    } catch (error) {
+      console.error('Error fetching MFA setup data:', error);
+      alert('Error setting up MFA: ' + (error.message || 'Unknown error'));
+      hideMFAModal();
+    }
+  }
+  
+  // Show the MFA verification step
+  function showMFAVerificationStep() {
+    document.getElementById('mfaStep1').style.display = 'none';
+    document.getElementById('mfaStep2').style.display = 'block';
+    document.getElementById('mfaSuccess').style.display = 'none';
+    document.getElementById('mfaTokenInput').focus();
+  }
+  
+  // Go back to the first step of MFA setup
+  function backToMFAStep1() {
+    document.getElementById('mfaStep1').style.display = 'block';
+    document.getElementById('mfaStep2').style.display = 'none';
+    document.getElementById('mfaSuccess').style.display = 'none';
+  }
+  
+  // Verify the MFA token
+  async function verifyMFAToken() {
+    const token = localStorage.getItem('jwtToken');
+    if (!token) {
+      window.location.href = '/index.html';
+      return;
+    }
+    
+    const mfaToken = document.getElementById('mfaTokenInput').value.trim();
+    
+    // Validate the token
+    if (!mfaToken || mfaToken.length !== 6 || !/^\d+$/.test(mfaToken)) {
+      document.getElementById('mfaTokenError').textContent = 'Please enter a valid 6-digit code';
+      document.getElementById('mfaTokenError').style.display = 'block';
+      return;
+    }
+    
+    try {
+      const response = await fetch('/api/verify-mfa', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ token: mfaToken })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        document.getElementById('mfaTokenError').textContent = errorData.error || 'Invalid verification code';
+        document.getElementById('mfaTokenError').style.display = 'block';
+        return;
+      }
+      
+      // Show success message
+      document.getElementById('mfaStep1').style.display = 'none';
+      document.getElementById('mfaStep2').style.display = 'none';
+      document.getElementById('mfaSuccess').style.display = 'block';
+      
+    } catch (error) {
+      console.error('Error verifying MFA token:', error);
+      document.getElementById('mfaTokenError').textContent = 'Error verifying code: ' + (error.message || 'Unknown error');
+      document.getElementById('mfaTokenError').style.display = 'block';
+    }
+  }

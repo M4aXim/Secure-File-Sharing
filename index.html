@@ -6,122 +6,122 @@
   <title>FileShare - Secure File Sharing</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <style>
-    :root {
-      --primary-color: #4285F4;
-      --secondary-color: #34A853;
-      --accent-color: #EA4335;
-      --light-gray: #F5F5F5;
-    }
-    
-    body {
-      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    
-    .hidden {
-      display: none;
-    }
-    
-    .hero {
-      background-color: rgba(255, 255, 255, 0.9);
-      border-radius: 10px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
-      margin-bottom: 2rem;
-    }
-    
-    .form-card {
-      max-width: 480px;
-      margin: 0 auto;
-      background-color: white;
-      border-radius: 10px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-      transition: all 0.3s ease;
-    }
-    
-    .form-card:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-    }
-    
-    footer {
-      margin-top: auto;
-      padding: 1.5rem;
-      background-color: rgba(255, 255, 255, 0.8);
-      text-align: center;
-      color: #555;
-      font-weight: 500;
-    }
-    
-    .button {
-      border-radius: 25px;
-      font-weight: 500;
-      transition: all 0.3s ease;
-    }
-    
-    .button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    }
-    
-    .button.is-primary {
-      background-color: var(--primary-color);
-    }
-    
-    .button.is-link {
-      background-color: var(--secondary-color);
-    }
-    
-    .button.is-success {
-      background-color: var(--secondary-color);
-    }
-    
-    .input {
-      border-radius: 6px;
-      box-shadow: none;
-      transition: all 0.3s ease;
-    }
-    
-    .input:focus {
-      border-color: var(--primary-color);
-      box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
-    }
-    
-    .feature-card {
-      height: 100%;
-      transition: all 0.3s ease;
-    }
-    
-    .feature-card:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-    }
-    
-    .feature-icon {
-      font-size: 2.5rem;
-      margin-bottom: 1rem;
-      color: var(--primary-color);
-    }
-    
-    .modal-card {
-      border-radius: 10px;
-      max-width: 480px;
-    }
-    
-    .form-note {
-      font-size: 0.85rem;
-      color: #777;
-      text-align: center;
-      margin-top: 1rem;
-    }
-    
-    .field-icon {
-      color: #BBB;
-    }
-  </style>
-</head>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+  :root {
+    --primary-color: #4285F4;
+    --secondary-color: #34A853;
+    --accent-color: #EA4335;
+    --light-gray: #F5F5F5;
+  }
+  
+  body {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .hidden {
+    display: none;
+  }
+  
+  .hero {
+    background-color: rgba(255, 255, 255, 0.9);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+    margin-bottom: 2rem;
+  }
+  
+  .form-card {
+    max-width: 480px;
+    margin: 0 auto;
+    background-color: white;
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+  }
+  
+  .form-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  }
+  
+  footer {
+    margin-top: auto;
+    padding: 1.5rem;
+    background-color: rgba(255, 255, 255, 0.8);
+    text-align: center;
+    color: #555;
+    font-weight: 500;
+  }
+  
+  .button {
+    border-radius: 25px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+  }
+  
+  .button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+  
+  .button.is-primary {
+    background-color: var(--primary-color);
+  }
+  
+  .button.is-link {
+    background-color: var(--secondary-color);
+  }
+  
+  .button.is-success {
+    background-color: var(--secondary-color);
+  }
+  
+  .input {
+    border-radius: 6px;
+    box-shadow: none;
+    transition: all 0.3s ease;
+  }
+  
+  .input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+  }
+  
+  .feature-card {
+    height: 100%;
+    transition: all 0.3s ease;
+  }
+  
+  .feature-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  }
+  
+  .feature-icon {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    color: var(--primary-color);
+  }
+  
+  .modal-card {
+    border-radius: 10px;
+    max-width: 480px;
+  }
+  
+  .form-note {
+    font-size: 0.85rem;
+    color: #777;
+    text-align: center;
+    margin-top: 1rem;
+  }
+  
+  .field-icon {
+    color: #BBB;
+  }
+</STYLE></head>
 <body>
   <section class="section py-6">
     <div class="container">

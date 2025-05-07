@@ -865,7 +865,7 @@
       display: flex;
       align-items: center;
       font-size: 13px;
-      color: var(--text-secondary);
+      color: var (--text-secondary);
     }
 
     .file-size, .file-date {
@@ -946,6 +946,10 @@
         <span class="icon"><i class="fas fa-key"></i></span>
         <span>Change Password</span>
       </div>
+      <div class="user-action-item" onclick="showSetupMFAModal()">
+        <span class="icon"><i class="fas fa-shield-alt"></i></span>
+        <span>Setup MFA</span>
+      </div>
       <div class="user-action-item">
         <span class="icon"><i class="fas fa-sign-out-alt"></i></span>
         <button onclick="logout()" style="background: none; border: none; cursor: pointer; font-size: 15px; padding: 0; color: var(--text-primary);">Sign Out</button>
@@ -1015,6 +1019,57 @@
       <div class="modal-buttons">
         <button class="modal-button cancel" onclick="hideChangePasswordModal()">Cancel</button>
         <button class="modal-button submit" onclick="changePassword()">Change Password</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MFA SETUP MODAL -->
+  <div class="modal" id="setupMFAModal">
+    <div class="modal-content">
+      <div class="modal-title">Setup Multi-Factor Authentication</div>
+      
+      <div id="mfaStep1">
+        <p style="margin-bottom: 20px; color: var(--text-secondary);">Enhance your account security by setting up Multi-Factor Authentication. Scan the QR code with an authenticator app like Google Authenticator or Authy.</p>
+        
+        <div style="text-align: center; margin: 20px 0;">
+          <div id="qrCodeContainer" style="margin-bottom: 20px; padding: 20px; border: 1px solid var(--border-light); border-radius: 10px; display: inline-block;">
+            <img id="qrCodeImage" src="" alt="QR Code" style="max-width: 200px;">
+          </div>
+          <p style="font-size: 13px; color: var(--text-secondary);">Can't scan? Use this secret key instead:</p>
+          <div id="secretKey" style="font-family: monospace; background: #f5f5f5; padding: 10px; border-radius: 5px; margin-top: 10px; word-break: break-all; font-size: 14px;"></div>
+        </div>
+        
+        <div class="modal-buttons">
+          <button class="modal-button cancel" onclick="hideMFAModal()">Cancel</button>
+          <button class="modal-button submit" onclick="showMFAVerificationStep()">Continue</button>
+        </div>
+      </div>
+      
+      <div id="mfaStep2" style="display: none;">
+        <p style="margin-bottom: 20px; color: var(--text-secondary);">Enter the verification code from your authenticator app to complete the setup.</p>
+        
+        <div class="modal-input-group">
+          <label for="mfaTokenInput">Verification Code</label>
+          <input type="text" class="modal-input" id="mfaTokenInput" placeholder="Enter 6-digit code" maxlength="6" autocomplete="off">
+          <div class="error-message" id="mfaTokenError"></div>
+        </div>
+        
+        <div class="modal-buttons">
+          <button class="modal-button cancel" onclick="backToMFAStep1()">Back</button>
+          <button class="modal-button submit" onclick="verifyMFAToken()">Verify & Enable</button>
+        </div>
+      </div>
+      
+      <div id="mfaSuccess" style="display: none; text-align: center;">
+        <div style="margin: 30px 0;">
+          <i class="fas fa-shield-check" style="font-size: 48px; color: #0f9d58; margin-bottom: 20px;"></i>
+          <h3 style="font-size: 20px; margin-bottom: 15px;">MFA Enabled Successfully!</h3>
+          <p style="color: var(--text-secondary);">Your account is now protected with multi-factor authentication.</p>
+        </div>
+        
+        <div class="modal-buttons" style="justify-content: center;">
+          <button class="modal-button submit" onclick="hideMFAModal()">Done</button>
+        </div>
       </div>
     </div>
   </div>
