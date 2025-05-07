@@ -25,7 +25,8 @@ const speakeasy          = require('speakeasy');
 const qrcode             = require('qrcode');
 
 const fastify = fastifyLib({
-  logger: { level: process.env.LOG_LEVEL || 'info' }
+  logger: { level: process.env.LOG_LEVEL || 'info' },
+  trustProxy: true // Trust proxy headers
 });
 
 // --- MONGODB SETUP ---
@@ -116,10 +117,28 @@ fastify.decorate('verifyStaff', async (req, reply) => {
   }
 });
 
+// Helper function to get real client IP
+function getClientIP(req) {
+  // Check X-Forwarded-For header first
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (forwardedFor) {
+    // Get the first IP in the chain (client IP)
+    const clientIP = forwardedFor.split(',')[0].trim();
+    if (clientIP) return clientIP;
+  }
+
+  // Check X-Real-IP header
+  const realIP = req.headers['x-real-ip'];
+  if (realIP) return realIP;
+
+  // Fallback to direct connection IP
+  return req.ip || req.socket.remoteAddress || 'unknown';
+}
+
 // --- AUDIT LOGGING HELPER ---
 async function logActivity(req, activity, details = {}) {
-  const ip    = req.ip || req.socket.remoteAddress || 'unknown';
-  const user  = req.user?.username || details.username || 'anonymous';
+  const ip = getClientIP(req);
+  const user = req.user?.username || details.username || 'anonymous';
   const entry = {
     timestamp: new Date().toISOString(),
     ip,
@@ -199,7 +218,7 @@ function consumeDownloadToken(token) {
 
 // POST /api/register
 fastify.post('/api/register', async (req, reply) => {
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const ip = getClientIP(req);
   // Block registration from banned IPs
   if (await bannedIpsColl.findOne({ ip })) {
     return reply.code(403).send({ error: 'Registration blocked from banned IP' });
@@ -1216,7 +1235,7 @@ fastify.post('/api/owner/make-staff-account', { preHandler: [fastify.authenticat
       email,
       role:      'staff',
       createdAt: new Date().toISOString(),
-      originalIp: req.ip || req.socket.remoteAddress || 'unknown',
+      originalIp: getClientIP(req),
       mfa: {
         enabled: false,
         secret: null
@@ -1747,12 +1766,20 @@ fastify.delete('/api/owner/delete-account', { preHandler: [fastify.authenticate]
     if (!user) {
       return reply.notFound('User not found');
     }
+
+    if (reason === 'policy_violation' && user.originalIp) {
+      await bannedIpsColl.insertOne({
+        ip: user.originalIp,
+        bannedAt: new Date().toISOString(),
+        reason: 'Policy violation',
+        bannedBy: req.user.username,
+        bannedUsername: targetUsername
+      });
+    }
     
-    // Get all folders owned by the user
     const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
     const userFolders = folders.filter(f => f.owner === targetUsername);
     
-    // Delete all files from S3 for each folder
     for (const folder of userFolders) {
       const data = await s3.send(new ListObjectsV2Command({ 
         Bucket: process.env.S3_BUCKET_NAME, 
@@ -1773,7 +1800,6 @@ fastify.delete('/api/owner/delete-account', { preHandler: [fastify.authenticate]
     const updatedFolders = folders.filter(f => f.owner !== targetUsername);
     await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(updatedFolders, null, 2));
     
-    // Remove user's permissions from other people's folders
     for (const folder of updatedFolders) {
       if (folder.friendPermissions && folder.friendPermissions[targetUsername]) {
         delete folder.friendPermissions[targetUsername];
@@ -1785,21 +1811,21 @@ fastify.delete('/api/owner/delete-account', { preHandler: [fastify.authenticate]
     }
     await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(updatedFolders, null, 2));
     
-    // Delete the user from the database
     await usersColl.deleteOne({ username: targetUsername });
     
-    // Log the account deletion
     await logActivity(req, 'delete-account', { 
       targetUsername, 
       reason, 
       deletedBy: req.user.username,
-      foldersRemoved: userFolders.length
+      foldersRemoved: userFolders.length,
+      ipBanned: reason === 'policy_violation' ? user.originalIp : null
     });
     
     return reply.send({ 
       message: 'Account deleted successfully', 
       username: targetUsername, 
-      foldersRemoved: userFolders.length 
+      foldersRemoved: userFolders.length,
+      ipBanned: reason === 'policy_violation' ? user.originalIp : null
     });
   } catch (err) {
     fastify.log.error('Error deleting account:', err);

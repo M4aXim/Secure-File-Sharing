@@ -3,13 +3,12 @@
     let currentSort = { field: 'id', direction: 'asc' };
     
     // DOM elements
-    const folderListContainer = document.getElementById('folderListContainer');
+    const folderGrid = document.getElementById('folderGrid');
     const searchInput = document.getElementById('searchInput');
     const refreshBtn = document.getElementById('refreshBtn');
     const loadingIndicator = document.getElementById('loadingIndicator');
     const totalFoldersElem = document.getElementById('totalFolders');
     const uniqueOwnersElem = document.getElementById('uniqueOwners');
-    const unassignedFoldersElem = document.getElementById('unassignedFolders');
     
     // Event listeners
     document.addEventListener('DOMContentLoaded', fetchFolders);
@@ -69,11 +68,13 @@
     // Render folders to DOM
     function renderFolders(folders) {
       if (folders.length === 0) {
-        folderListContainer.innerHTML = `
-          <div class="no-folders">
-            <i class="fas fa-folder-open fa-3x mb-3"></i>
-            <h4>No folders found</h4>
-            <p>There are no folders to display or your search returned no results.</p>
+        folderGrid.innerHTML = `
+          <div class="col-12">
+            <div class="no-folders">
+              <i class="fas fa-folder-open fa-3x mb-3"></i>
+              <h4>No folders found</h4>
+              <p>There are no folders to display or your search returned no results.</p>
+            </div>
           </div>
         `;
         return;
@@ -83,31 +84,7 @@
       const sortedFolders = sortFolders(folders, currentSort.field, currentSort.direction);
       
       // Create folder grid
-      folderListContainer.innerHTML = `
-        <div class="row p-3">
-          ${sortedFolders.map(folder => createFolderCard(folder)).join('')}
-        </div>
-      `;
-      
-      // Add event listeners to folder cards
-      document.querySelectorAll('.copy-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const folderId = e.currentTarget.dataset.id;
-          copyToClipboard(folderId);
-          
-          // Show copied feedback
-          const originalHtml = e.currentTarget.innerHTML;
-          e.currentTarget.innerHTML = '<i class="fas fa-check"></i> Copied!';
-          e.currentTarget.classList.remove('btn-outline-secondary');
-          e.currentTarget.classList.add('btn-success');
-          
-          setTimeout(() => {
-            e.currentTarget.innerHTML = originalHtml;
-            e.currentTarget.classList.remove('btn-success');
-            e.currentTarget.classList.add('btn-outline-secondary');
-          }, 2000);
-        });
-      });
+      folderGrid.innerHTML = sortedFolders.map(folder => createFolderCard(folder)).join('');
     }
     
     // Create HTML for a single folder card
@@ -117,23 +94,20 @@
         : `<span class="badge bg-warning text-dark"><i class="fas fa-exclamation-triangle me-1"></i>Unassigned</span>`;
       
       return `
-        <div class="col-md-6 col-lg-4 mb-3">
-          <div class="card folder-card h-100">
-            <div class="card-body">
-              <div class="d-flex align-items-center mb-3">
-                <div class="me-3">
-                  <i class="fas fa-folder folder-icon"></i>
-                </div>
-                <div>
-                  <h5 class="card-title mb-1 text-truncate" title="${folder.folderId}">
-                    ${folder.folderId}
-                  </h5>
-                  <div>${ownerDisplay}</div>
+        <div class="card folder-card" data-id="${folder.folderId}">
+          <div class="card-body">
+            <div class="d-flex align-items-center">
+              <div class="me-3">
+                <i class="fas fa-folder folder-icon"></i>
+              </div>
+              <div>
+                <h5 class="card-title mb-1 text-truncate" title="${folder.folderId}">
+                  ${folder.folderId}
+                </h5>
+                <div class="d-flex gap-2">
+                  ${ownerDisplay}
                 </div>
               </div>
-              <button class="btn btn-outline-secondary btn-sm copy-btn w-100" data-id="${folder.folderId}">
-                <i class="fas fa-copy me-1"></i> Copy ID
-              </button>
             </div>
           </div>
         </div>
@@ -152,7 +126,6 @@
       const filteredFolders = allFolders.filter(folder => {
         const folderId = (folder.folderId || '').toLowerCase();
         const ownerName = (folder.owner || '').toLowerCase();
-        
         return folderId.includes(searchTerm) || ownerName.includes(searchTerm);
       });
       
@@ -164,29 +137,23 @@
       return [...folders].sort((a, b) => {
         let valueA, valueB;
         
-        if (field === 'id') {
-          valueA = a.folderId || '';
-          valueB = b.folderId || '';
-        } else if (field === 'owner') {
-          valueA = a.owner || '';
-          valueB = b.owner || '';
+        switch (field) {
+          case 'id':
+            valueA = a.folderId || '';
+            valueB = b.folderId || '';
+            break;
+          case 'owner':
+            valueA = a.owner || '';
+            valueB = b.owner || '';
+            break;
+          default:
+            valueA = a.folderId || '';
+            valueB = b.folderId || '';
         }
         
-        // Handle string comparison
-        if (typeof valueA === 'string') {
-          if (direction === 'asc') {
-            return valueA.localeCompare(valueB);
-          } else {
-            return valueB.localeCompare(valueA);
-          }
-        }
-        
-        // Fallback for non-string values
-        if (direction === 'asc') {
-          return valueA - valueB;
-        } else {
-          return valueB - valueA;
-        }
+        return direction === 'asc' 
+          ? valueA.localeCompare(valueB)
+          : valueB.localeCompare(valueA);
       });
     }
     
@@ -196,51 +163,33 @@
       
       // Count unique owners
       const uniqueOwners = new Set();
-      let unassignedCount = 0;
-      
       folders.forEach(folder => {
         if (folder.owner) {
           uniqueOwners.add(folder.owner);
-        } else {
-          unassignedCount++;
         }
       });
       
       // Update DOM
       totalFoldersElem.textContent = totalCount;
       uniqueOwnersElem.textContent = uniqueOwners.size;
-      unassignedFoldersElem.textContent = unassignedCount;
-    }
-    
-    // Copy text to clipboard
-    function copyToClipboard(text) {
-      navigator.clipboard.writeText(text)
-        .catch(err => {
-          console.error('Could not copy text: ', err);
-          // Fallback method
-          const textArea = document.createElement('textarea');
-          textArea.value = text;
-          document.body.appendChild(textArea);
-          textArea.select();
-          document.execCommand('copy');
-          document.body.removeChild(textArea);
-        });
     }
     
     // Show/hide loading indicator
     function showLoading(isLoading) {
-      loadingIndicator.style.display = isLoading ? 'flex' : 'none';
+      loadingIndicator.style.display = isLoading ? 'block' : 'none';
     }
     
     // Show error message
     function showError(message) {
-      folderListContainer.innerHTML = `
-        <div class="error-container">
-          <div class="d-flex align-items-center">
-            <i class="fas fa-exclamation-circle text-danger fa-2x me-3"></i>
-            <div>
-              <h5 class="text-danger mb-1">Error</h5>
-              <p class="mb-0">${message}</p>
+      folderGrid.innerHTML = `
+        <div class="col-12">
+          <div class="error-container">
+            <div class="d-flex align-items-center">
+              <i class="fas fa-exclamation-circle text-danger fa-2x me-3"></i>
+              <div>
+                <h5 class="text-danger mb-1">Error</h5>
+                <p class="mb-0">${message}</p>
+              </div>
             </div>
           </div>
         </div>

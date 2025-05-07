@@ -9,6 +9,7 @@
   <style>
     .folder-card {
       transition: transform 0.2s, box-shadow 0.2s;
+      height: 100%;
     }
     .folder-card:hover {
       transform: translateY(-3px);
@@ -63,6 +64,11 @@
       background-color: #f8d7da;
       border: 1px solid #f5c6cb;
     }
+    .folder-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+    }
   </style>
 </head>
 <body class="bg-light">
@@ -86,9 +92,9 @@
       </div>
     </div>
     
-    <!-- Search Bar -->
+    <!-- Search -->
     <div class="row mb-4">
-      <div class="col-md-6 mx-auto">
+      <div class="col-md-6">
         <div class="search-container">
           <i class="fas fa-search search-icon"></i>
           <input type="text" id="searchInput" class="form-control search-input" placeholder="Search folders by ID or owner...">
@@ -98,7 +104,7 @@
     
     <!-- Stats Cards -->
     <div class="row mb-4">
-      <div class="col-md-4 mb-3 mb-md-0">
+      <div class="col-md-6 mb-3 mb-md-0">
         <div class="card bg-primary text-white h-100">
           <div class="card-body d-flex align-items-center">
             <div class="me-3">
@@ -111,7 +117,7 @@
           </div>
         </div>
       </div>
-      <div class="col-md-4 mb-3 mb-md-0">
+      <div class="col-md-6">
         <div class="card bg-success text-white h-100">
           <div class="card-body d-flex align-items-center">
             <div class="me-3">
@@ -124,39 +130,21 @@
           </div>
         </div>
       </div>
-      <div class="col-md-4">
-        <div class="card bg-info text-white h-100">
-          <div class="card-body d-flex align-items-center">
-            <div class="me-3">
-              <i class="fas fa-question-circle fa-2x"></i>
-            </div>
-            <div>
-              <h6 class="card-title mb-0">Unassigned Folders</h6>
-              <h2 class="mb-0" id="unassignedFolders">-</h2>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
     
-    <!-- Folder List -->
-    <div class="card shadow">
-      <div class="card-header bg-white d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">Folder List</h5>
-        <div id="loadingIndicator" class="d-flex align-items-center">
-          <div class="loading-spinner me-2"></div>
-          <span>Loading folders...</span>
-        </div>
-      </div>
-      <div class="card-body p-0">
-        <div id="folderListContainer">
-          <!-- Folders will be loaded here -->
-        </div>
-      </div>
+    <!-- Folder Grid -->
+    <div class="folder-grid" id="folderGrid">
+      <!-- Folders will be loaded here -->
+    </div>
+
+    <!-- Loading indicator -->
+    <div id="loadingIndicator" class="text-center mt-4" style="display: none;">
+      <div class="loading-spinner"></div>
+      <p class="text-muted mt-2">Loading folders...</p>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="/javascript/staff/list-of-folders.js"></script>
+  <script src="/javascript/staff/list-of-folders.js"></script>
 </body>
 </html>

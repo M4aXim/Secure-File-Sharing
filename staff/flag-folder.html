@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     .page-container {
-      max-width: 700px;
+      max-width: 900px;
       margin: 0 auto;
     }
     .hero.is-warning {
@@ -30,6 +30,56 @@
     .info-box {
       background-color: #f6f9fe;
       border-left: 4px solid #3273dc;
+    }
+    .folder-details {
+      display: none;
+      margin-top: 1rem;
+    }
+    .folder-details.is-active {
+      display: block;
+    }
+    .action-buttons {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    .recent-actions-list {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .action-item {
+      padding: 0.75rem;
+      border-bottom: 1px solid #f0f0f0;
+      transition: background-color 0.2s;
+    }
+    .action-item:hover {
+      background-color: #f9f9f9;
+    }
+    .action-item:last-child {
+      border-bottom: none;
+    }
+    .timestamp {
+      font-size: 0.8rem;
+      color: #666;
+    }
+    .folder-info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-top: 1rem;
+    }
+    .folder-info-item {
+      background: #f8f9fa;
+      padding: 1rem;
+      border-radius: 6px;
+    }
+    .folder-info-label {
+      font-size: 0.9rem;
+      color: #666;
+      margin-bottom: 0.25rem;
+    }
+    .folder-info-value {
+      font-weight: 500;
     }
   </style>
 </head>
@@ -57,7 +107,8 @@
             </span>
           </div>
           <div class="column">
-            <p>Flagging a folder marks it for further review by the moderation team. Use this tool when content requires attention but doesn't need immediate removal.</p>
+            <p>Flagging a folder marks it for further review by the owner. Use this tool when content requires attention but doesn't need immediate removal.</p>
+            <p class="mt-2"><strong>Note:</strong> Flagged folders will be reviewed by the owner and may result in content removal or account suspension if violations are confirmed.</p>
           </div>
         </div>
       </div>
@@ -77,6 +128,29 @@
           </div>
 
           <div class="field">
+            <label class="label">Reason for Flagging</label>
+            <div class="control">
+              <div class="select is-fullwidth">
+                <select id="flagReason" required>
+                  <option value="">Select a reason</option>
+                  <option value="suspicious_content">Suspicious Content</option>
+                  <option value="copyright_violation">Copyright Violation</option>
+                  <option value="inappropriate_content">Inappropriate Content</option>
+                  <option value="spam">Spam</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="field" id="otherReasonField" style="display: none;">
+            <label class="label">Specify Other Reason</label>
+            <div class="control">
+              <textarea class="textarea" id="otherReason" placeholder="Please specify the reason for flagging"></textarea>
+            </div>
+          </div>
+
+          <div class="field">
             <div class="control">
               <button type="submit" class="button is-warning is-fullwidth">
                 <span class="icon">
@@ -87,6 +161,49 @@
             </div>
           </div>
         </form>
+      </div>
+
+      <!-- Folder Details Section -->
+      <div id="folderDetails" class="folder-details">
+        <div class="box">
+          <h3 class="title is-5">
+            <i class="fas fa-info-circle mr-2"></i>Folder Details
+          </h3>
+          
+          <div class="folder-info-grid">
+            <div class="folder-info-item">
+              <div class="folder-info-label">Owner</div>
+              <div class="folder-info-value" id="folderOwner">-</div>
+            </div>
+            <div class="folder-info-item">
+              <div class="folder-info-label">Created At</div>
+              <div class="folder-info-value" id="folderCreatedAt">-</div>
+            </div>
+            <div class="folder-info-item">
+              <div class="folder-info-label">File Count</div>
+              <div class="folder-info-value" id="folderFileCount">-</div>
+            </div>
+            <div class="folder-info-item">
+              <div class="folder-info-label">Status</div>
+              <div class="folder-info-value" id="folderStatus">-</div>
+            </div>
+          </div>
+
+          <div class="action-buttons">
+            <button class="button is-info" id="viewContentsBtn">
+              <span class="icon">
+                <i class="fas fa-eye"></i>
+              </span>
+              <span>View Contents</span>
+            </button>
+            <button class="button is-danger" id="deleteFolderBtn">
+              <span class="icon">
+                <i class="fas fa-trash"></i>
+              </span>
+              <span>Delete Folder</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Result Notification -->
@@ -101,13 +218,15 @@
         <p class="has-text-grey">Processing request...</p>
       </div>
       
-      <!-- Recent actions (optional component) -->
+      <!-- Recent actions -->
       <div class="box mt-5">
         <h3 class="title is-5">
           <i class="fas fa-history mr-2"></i>Recent Actions
         </h3>
         <div class="content">
-          <p class="has-text-grey-light has-text-centered">No recent flagging actions to display</p>
+          <div id="recentActionsList" class="recent-actions-list">
+            <p class="has-text-grey-light has-text-centered">No recent flagging actions to display</p>
+          </div>
         </div>
       </div>
     </div>
@@ -121,6 +240,6 @@
     </div>
   </footer>
 
-<script src="/javascript/staff/flag-folder.js"></script>
+  <script src="/javascript/staff/flag-folder.js"></script>
 </body>
 </html>

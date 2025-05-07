@@ -3,199 +3,144 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Staff analytics</title>
-    <!-- Bulma CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.4/css/bulma.min.css">
-    <!-- Font Awesome -->
+    <title>Staff Analytics</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        .dashboard-card {
-            height: 100%;
-            transition: transform 0.2s, box-shadow 0.2s;
+        .card {
+            transition: transform 0.2s;
         }
-        .dashboard-card:hover {
+        .card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 8px 16px rgba(10, 10, 10, 0.1);
         }
-        .card-icon {
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-        }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.is-active {
-            display: block;
-        }
-        .statistic-value {
-            font-size: 2.5rem;
+        .stat-value {
+            font-size: 2rem;
             font-weight: bold;
-            margin-bottom: 0.5rem;
         }
-        .statistic-label {
-            font-size: 1rem;
-            color: #7a7a7a;
-        }
-        .stat-container {
-            padding: 1.5rem;
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
         }
         .user-list-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0.75rem 0;
-            border-bottom: 1px solid #f5f5f5;
+            padding: 0.75rem;
+            border-bottom: 1px solid #eee;
         }
         .user-list-item:last-child {
             border-bottom: none;
+        }
+        .progress {
+            height: 1.5rem;
+        }
+        .progress::-webkit-progress-value {
+            transition: width 0.3s ease;
         }
     </style>
 </head>
 <body>
     <nav class="navbar is-primary" role="navigation" aria-label="main navigation">
         <div class="navbar-brand">
-            <a class="navbar-item" href="#">
-                <strong>Staff Dashboard</strong>
+            <a class="navbar-item" href="/staff/dashboard.html">
+                <i class="fas fa-chart-line"></i>
+                <span class="ml-2">Staff Analytics</span>
             </a>
-            <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false">
-                <span aria-hidden="true"></span>
-                <span aria-hidden="true"></span>
-                <span aria-hidden="true"></span>
-            </a>
-        </div>
-        <div class="navbar-menu">
-            <div class="navbar-end">
-                <div class="navbar-item">
-                    <div class="buttons">
-                        <a class="button is-light" id="refreshButton">
-                            <i class="fas fa-sync-alt mr-2"></i>
-                            Refresh Data
-                        </a>
-                    </div>
-                </div>
-            </div>
         </div>
     </nav>
 
     <section class="section">
         <div class="container">
-            <div class="tabs is-centered is-boxed">
-                <ul>
-                    <li class="is-active" data-tab="overview">
-                        <a>
-                            <span class="icon is-small"><i class="fas fa-tachometer-alt"></i></span>
-                            <span>Overview</span>
-                        </a>
-                    </li>
-                    <li data-tab="folder-stats">
-                        <a>
-                            <span class="icon is-small"><i class="fas fa-folder"></i></span>
-                            <span>Folder Statistics</span>
-                        </a>
-                    </li>
-                    <li data-tab="user-stats">
-                        <a>
-                            <span class="icon is-small"><i class="fas fa-users"></i></span>
-                            <span>User Statistics</span>
-                        </a>
-                    </li>
-                </ul>
+            <!-- Last Updated and Refresh -->
+            <div class="level mb-5">
+                <div class="level-left">
+                    <div class="level-item">
+                        <p class="has-text-grey">
+                            Last updated: <span id="lastUpdated">-</span>
+                        </p>
+                    </div>
+                </div>
+                <div class="level-right">
+                    <div class="level-item">
+                        <button id="refreshButton" class="button is-primary">
+                            <span class="icon">
+                                <i class="fas fa-sync-alt"></i>
+                            </span>
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+                </div>
             </div>
 
-            <!-- Overview Tab -->
-            <div id="overview" class="tab-content is-active">
-                <div class="notification is-light">
-                    <p>System overview showing key metrics at a glance. Last updated: <span id="lastUpdated">Loading...</span></p>
+            <!-- Basic Stats -->
+            <div class="columns is-multiline">
+                <div class="column is-3">
+                    <div class="card">
+                        <div class="card-content">
+                            <div class="stat-value" id="totalUsers">-</div>
+                            <div class="stat-label">Total Users</div>
+                        </div>
+                    </div>
                 </div>
-                
-                <div class="columns is-multiline">
-                    <!-- Total Users Card -->
-                    <div class="column is-3">
-                        <div class="card dashboard-card">
-                            <div class="card-content has-text-centered">
-                                <div class="card-icon has-text-info">
-                                    <i class="fas fa-users"></i>
-                                </div>
-                                <p class="statistic-label">Total Users</p>
-                                <p class="statistic-value" id="totalUsers">-</p>
-                            </div>
+                <div class="column is-3">
+                    <div class="card">
+                        <div class="card-content">
+                            <div class="stat-value" id="totalFolders">-</div>
+                            <div class="stat-label">Total Folders</div>
                         </div>
                     </div>
-                    
-                    <!-- Total Folders Card -->
-                    <div class="column is-3">
-                        <div class="card dashboard-card">
-                            <div class="card-content has-text-centered">
-                                <div class="card-icon has-text-primary">
-                                    <i class="fas fa-folder"></i>
-                                </div>
-                                <p class="statistic-label">Total Folders</p>
-                                <p class="statistic-value" id="totalFolders">-</p>
-                            </div>
+                </div>
+                <div class="column is-3">
+                    <div class="card">
+                        <div class="card-content">
+                            <div class="stat-value" id="totalFiles">-</div>
+                            <div class="stat-label">Total Files</div>
                         </div>
                     </div>
-                    
-                    <!-- Total Files Card -->
-                    <div class="column is-3">
-                        <div class="card dashboard-card">
-                            <div class="card-content has-text-centered">
-                                <div class="card-icon has-text-success">
-                                    <i class="fas fa-file"></i>
-                                </div>
-                                <p class="statistic-label">Total Files</p>
-                                <p class="statistic-value" id="totalFiles">-</p>
-                            </div>
+                </div>
+                <div class="column is-3">
+                    <div class="card">
+                        <div class="card-content">
+                            <div class="stat-value" id="totalStorage">-</div>
+                            <div class="stat-label">Total Storage Used</div>
                         </div>
                     </div>
-                    
-                    <!-- Storage Used Card -->
-                    <div class="column is-3">
-                        <div class="card dashboard-card">
-                            <div class="card-content has-text-centered">
-                                <div class="card-icon has-text-warning">
-                                    <i class="fas fa-database"></i>
+                </div>
+            </div>
+
+            <!-- Folder Distribution -->
+            <div class="columns mt-5">
+                <div class="column is-6">
+                    <div class="card">
+                        <div class="card-content">
+                            <h3 class="title is-5">Folder Distribution</h3>
+                            <div class="columns">
+                                <div class="column">
+                                    <div class="stat-value" id="totalPublicFolders">-</div>
+                                    <div class="stat-label">Public Folders</div>
                                 </div>
-                                <p class="statistic-label">Storage Used</p>
-                                <p class="statistic-value" id="totalStorage">-</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Recent Activity Card -->
-                    <div class="column is-6">
-                        <div class="card dashboard-card">
-                            <div class="card-header">
-                                <p class="card-header-title">
-                                    <span class="icon mr-2"><i class="fas fa-chart-line"></i></span>
-                                    Recent Activity
-                                </p>
-                            </div>
-                            <div class="card-content">
-                                <div class="content">
-                                    <div class="stat-container">
-                                        <p class="is-size-4 mb-2">Recent Uploads (24h)</p>
-                                        <p class="is-size-2 has-text-weight-bold" id="recentUploads">-</p>
-                                    </div>
+                                <div class="column">
+                                    <div class="stat-value" id="totalPrivateFolders">-</div>
+                                    <div class="stat-label">Private Folders</div>
                                 </div>
                             </div>
+                            <progress id="folderProgressBar" class="progress is-primary" value="0" max="100"></progress>
+                            <p class="has-text-centered mt-2" id="folderDistributionText">-</p>
                         </div>
                     </div>
-                    
-                    <!-- Average Stats Card -->
-                    <div class="column is-6">
-                        <div class="card dashboard-card">
-                            <div class="card-header">
-                                <p class="card-header-title">
-                                    <span class="icon mr-2"><i class="fas fa-calculator"></i></span>
-                                    Average Statistics
-                                </p>
-                            </div>
-                            <div class="card-content">
-                                <div class="content">
-                                    <div class="stat-container">
-                                        <p class="is-size-4 mb-2">Average Files Per Folder</p>
-                                        <p class="is-size-2 has-text-weight-bold" id="averageFilesPerFolder">-</p>
-                                    </div>
+                </div>
+                <div class="column is-6">
+                    <div class="card">
+                        <div class="card-content">
+                            <h3 class="title is-5">File Statistics</h3>
+                            <div class="columns">
+                                <div class="column">
+                                    <div class="stat-value" id="averageFilesPerFolder">-</div>
+                                    <div class="stat-label">Avg Files per Folder</div>
+                                </div>
+                                <div class="column">
+                                    <div class="stat-value" id="recentUploads">-</div>
+                                    <div class="stat-label">Recent Uploads</div>
                                 </div>
                             </div>
                         </div>
@@ -203,118 +148,24 @@
                 </div>
             </div>
 
-            <!-- Folder Statistics Tab -->
-            <div id="folder-stats" class="tab-content">
-                <div class="notification is-light">
-                    <p>Detailed folder statistics and distribution.</p>
-                </div>
-                
-                <div class="columns is-multiline">
-                    <!-- Folder Distribution Card -->
-                    <div class="column is-6">
-                        <div class="card dashboard-card">
-                            <div class="card-header">
-                                <p class="card-header-title">
-                                    <span class="icon mr-2"><i class="fas fa-chart-pie"></i></span>
-                                    Folder Distribution
-                                </p>
-                            </div>
-                            <div class="card-content">
-                                <div class="columns">
-                                    <div class="column is-6">
-                                        <div class="has-text-centered mb-4">
-                                            <span class="icon is-large has-text-success">
-                                                <i class="fas fa-folder-open fa-2x"></i>
-                                            </span>
-                                            <p class="is-size-4 mt-2">Public Folders</p>
-                                            <p class="is-size-2 has-text-weight-bold" id="totalPublicFolders">-</p>
-                                        </div>
-                                    </div>
-                                    <div class="column is-6">
-                                        <div class="has-text-centered mb-4">
-                                            <span class="icon is-large has-text-danger">
-                                                <i class="fas fa-folder-open fa-2x"></i>
-                                            </span>
-                                            <p class="is-size-4 mt-2">Private Folders</p>
-                                            <p class="is-size-2 has-text-weight-bold" id="totalPrivateFolders">-</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <progress class="progress is-success" id="folderProgressBar" value="50" max="100"></progress>
-                                <p class="has-text-centered" id="folderDistributionText">Loading folder distribution...</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Storage Stats Card -->
-                    <div class="column is-6">
-                        <div class="card dashboard-card">
-                            <div class="card-header">
-                                <p class="card-header-title">
-                                    <span class="icon mr-2"><i class="fas fa-hdd"></i></span>
-                                    Storage Information
-                                </p>
-                            </div>
-                            <div class="card-content">
-                                <div class="content">
-                                    <div class="columns is-multiline">
-                                        <div class="column is-6">
-                                            <div class="stat-container has-text-centered">
-                                                <p class="is-size-5">Total Storage</p>
-                                                <p class="is-size-3 has-text-weight-bold" id="storageSizeFormatted">-</p>
-                                            </div>
-                                        </div>
-                                        <div class="column is-6">
-                                            <div class="stat-container has-text-centered">
-                                                <p class="is-size-5">Avg. File Size</p>
-                                                <p class="is-size-3 has-text-weight-bold" id="avgFileSize">-</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
+            <!-- Top Users -->
+            <div class="columns mt-5">
+                <div class="column is-6">
+                    <div class="card">
+                        <div class="card-content">
+                            <h3 class="title is-5">Top Users by Folders</h3>
+                            <div id="topUsersByFolders">
+                                <!-- Will be populated by JavaScript -->
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <!-- User Statistics Tab -->
-            <div id="user-stats" class="tab-content">
-                <div class="notification is-light">
-                    <p>User activity and resource usage statistics.</p>
-                </div>
-                
-                <div class="columns is-multiline">
-                    <!-- Top Users by Folders -->
-                    <div class="column is-6">
-                        <div class="card dashboard-card">
-                            <div class="card-header">
-                                <p class="card-header-title">
-                                    <span class="icon mr-2"><i class="fas fa-trophy"></i></span>
-                                    Top Users by Folders
-                                </p>
-                            </div>
-                            <div class="card-content">
-                                <div class="content" id="topUsersByFolders">
-                                    <p class="has-text-centered">Loading user data...</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Top Users by Files -->
-                    <div class="column is-6">
-                        <div class="card dashboard-card">
-                            <div class="card-header">
-                                <p class="card-header-title">
-                                    <span class="icon mr-2"><i class="fas fa-trophy"></i></span>
-                                    Top Users by Files
-                                </p>
-                            </div>
-                            <div class="card-content">
-                                <div class="content" id="topUsersByFiles">
-                                    <p class="has-text-centered">Loading user data...</p>
-                                </div>
+                <div class="column is-6">
+                    <div class="card">
+                        <div class="card-content">
+                            <h3 class="title is-5">Top Users by Files</h3>
+                            <div id="topUsersByFiles">
+                                <!-- Will be populated by JavaScript -->
                             </div>
                         </div>
                     </div>
@@ -323,14 +174,6 @@
         </div>
     </section>
 
-    <footer class="footer">
-        <div class="content has-text-centered">
-            <p>
-                <strong>Staff analytics</strong> - © 2025 File Storage System
-            </p>
-        </div>
-    </footer>
-
-<script src="/javascript/staff/stats.js"></script>
+    <script src="/javascript/staff/stats.js"></script>
 </body>
 </html>
