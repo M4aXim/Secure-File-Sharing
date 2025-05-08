@@ -1727,6 +1727,185 @@ fastify.get('/api/staff/stats/recent-uploads', { preHandler: [fastify.authentica
   return { recentUploads: count };
 });
 
+fastify.get('/api/staff/groups', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  
+  // Get folder permissions for each group
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  
+  const enrichedGroups = groups.map(group => {
+    // Count folders with permissions for this group
+    const folderCount = folders.filter(f => f.groupPermissions?.[group.groupId]).length;
+    
+    // Get member details
+    const memberDetails = group.members.map(username => ({
+      username,
+      isOwner: username === group.owner
+    }));
+    
+    // Get pending invitations
+    const pendingInvites = group.invitedUsers || [];
+    
+    return {
+      groupId: group.groupId,
+      groupName: group.groupName,
+      owner: group.owner,
+      createdAt: group.createdAt,
+      memberCount: group.members.length,
+      pendingInviteCount: pendingInvites.length,
+      folderCount,
+      members: memberDetails,
+      pendingInvites: pendingInvites.map(inv => ({
+        username: inv.username,
+        email: inv.email,
+        invitationId: inv.invitationId
+      }))
+    };
+  });
+  
+  await logActivity(req, 'staff-view-all-groups');
+  return { groups: enrichedGroups };
+});
+
+// GET /api/staff/groups/:groupId/activity
+fastify.get('/api/staff/groups/:groupId/activity', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const { groupId } = req.params;
+  
+  // Verify group exists
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  const group = groups.find(g => g.groupId === groupId);
+  if (!group) return reply.notFound('Group not found');
+  
+  // Get audit logs for this group
+  const raw = await fsPromises.readFile(AUDIT_LOG, 'utf8');
+  const lines = raw.split('\n').filter(Boolean);
+  
+  const groupActivity = lines
+    .map(line => {
+      try {
+        const entry = JSON.parse(line);
+        // Filter for activities related to this group
+        if (entry.activity === 'update-group-permissions' && entry.groupId === groupId) return entry;
+        if (entry.activity === 'accept-group-invite' && entry.groupId === groupId) return entry;
+        if (entry.activity === 'reject-group-invite' && entry.groupId === groupId) return entry;
+        return null;
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .slice(0, 100); // Last 100 activities
+    
+  await logActivity(req, 'staff-view-group-activity', { groupId });
+  return { activities: groupActivity };
+});
+
+// POST /api/staff/groups/:groupId/flag
+fastify.post('/api/staff/groups/:groupId/flag', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const { groupId } = req.params;
+  const { reason } = req.body;
+  
+  if (!reason) return reply.badRequest('Reason is required');
+  
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  const group = groups.find(g => g.groupId === groupId);
+  if (!group) return reply.notFound('Group not found');
+  
+  group.flagged = true;
+  group.flagReason = reason;
+  group.flaggedBy = req.user.username;
+  group.flaggedAt = new Date().toISOString();
+  
+  await fsPromises.writeFile(GROUPS_FILE, JSON.stringify(groups, null, 2));
+  
+  // Notify owner
+  try {
+    await transporter.sendMail({
+      from: `"File Sharing" <${process.env.EMAIL_USER}>`,
+      to: OWNER_USERNAME,
+      bcc: BCC_LIST,
+      subject: 'Group Flagged by Staff Member',
+      text: `A group has been flagged in the system:
+Group Name: ${group.groupName}
+Group ID: ${groupId}
+Flagged by: ${req.user.username}
+Reason: ${reason}
+Group Owner: ${group.owner}`
+    });
+  } catch (err) {
+    fastify.log.error('Flag email error:', err);
+  }
+  
+  await logActivity(req, 'staff-flag-group', { groupId, reason });
+  return reply.send({ message: 'Group flagged successfully' });
+});
+
+// DELETE /api/staff/groups/:groupId/members/:username
+fastify.delete('/api/staff/groups/:groupId/members/:username', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const { groupId, username } = req.params;
+  
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  const group = groups.find(g => g.groupId === groupId);
+  if (!group) return reply.notFound('Group not found');
+  
+  // Cannot remove the owner
+  if (username === group.owner) {
+    return reply.forbidden('Cannot remove group owner');
+  }
+  
+  // Remove from members
+  group.members = group.members.filter(m => m !== username);
+  
+  // Remove from invited users if present
+  if (group.invitedUsers) {
+    group.invitedUsers = group.invitedUsers.filter(i => i.username !== username);
+  }
+  
+  await fsPromises.writeFile(GROUPS_FILE, JSON.stringify(groups, null, 2));
+  
+  // Remove group permissions from all folders
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  for (const folder of folders) {
+    if (folder.groupPermissions?.[groupId]) {
+      delete folder.groupPermissions[groupId];
+    }
+  }
+  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
+  
+  await logActivity(req, 'staff-remove-group-member', { groupId, username });
+  return reply.send({ message: 'Member removed from group' });
+});
+
+// GET /api/staff/groups/stats
+fastify.get('/api/staff/groups/stats', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  
+  const stats = {
+    totalGroups: groups.length,
+    totalMembers: groups.reduce((sum, g) => sum + g.members.length, 0),
+    totalPendingInvites: groups.reduce((sum, g) => sum + (g.invitedUsers?.length || 0), 0),
+    flaggedGroups: groups.filter(g => g.flagged).length,
+    averageMembersPerGroup: groups.length ? groups.reduce((sum, g) => sum + g.members.length, 0) / groups.length : 0,
+    groupsWithFolderAccess: folders.filter(f => Object.keys(f.groupPermissions || {}).length > 0).length,
+    topGroupsByMembers: groups
+      .sort((a, b) => b.members.length - a.members.length)
+      .slice(0, 5)
+      .map(g => ({
+        groupId: g.groupId,
+        groupName: g.groupName,
+        memberCount: g.members.length,
+        owner: g.owner
+      }))
+  };
+  
+  await logActivity(req, 'staff-view-group-stats');
+  return stats;
+});
+
+
+
 fastify.delete('/api/staff/mfa/disable', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const { username } = req.body;
   if (!username) return reply.badRequest('Username is required');
@@ -1927,6 +2106,120 @@ fastify.get('/api/recommended-files', { preHandler: [fastify.authenticate] }, as
   }
 });
 
+// GET /api/thumbnail/:folderId/*
+fastify.get('/api/thumbnail/:folderId/*', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { folderId } = req.params;
+  const filename = req.params['*'];
+  const key = `folders/${folderId}/${filename}`;
+
+  // Check folder permissions
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const meta = folders.find(f => f.folderId === folderId);
+  if (!meta) return reply.notFound('Folder not found');
+
+  let allowed = false;
+  const isOwner = meta.owner === req.user.username;
+
+  if (meta.isPublic || isOwner) {
+    allowed = true;
+  } else {
+    const friendPerms = (meta.friendPermissions || {})[req.user.username];
+    if (friendPerms?.view || friendPerms?.download) allowed = true;
+
+    if (!allowed) {
+      const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+      const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
+      const groupPermOk = myGroupIds.some(id => 
+        meta.groupPermissions?.[id]?.view === true || 
+        meta.groupPermissions?.[id]?.download === true
+      );
+      if (groupPermOk) allowed = true;
+    }
+  }
+
+  if (!allowed) return reply.forbidden('Access denied');
+
+  try {
+    // Get file from S3
+    const response = await s3.send(new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: key
+    }));
+
+    const fileBuffer = await response.Body.transformToByteArray();
+    const mimeType = mime.lookup(filename) || 'application/octet-stream';
+    const ext = path.extname(filename).toLowerCase();
+    
+    // Check if it's a video file by both MIME type and extension
+    const isVideo = mimeType.startsWith('video/') || ['.mp4', '.webm', '.mov', '.avi', '.mkv'].includes(ext);
+    const isImage = mimeType.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext);
+
+    if (isImage) {
+      // Generate image thumbnail
+      const thumbnail = await sharp(fileBuffer)
+        .resize(300, 300, {
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+
+      reply.header('Content-Type', 'image/jpeg');
+      reply.header('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+      return reply.send(thumbnail);
+    } 
+    else if (isVideo) {
+      // Create a temporary file for the video
+      const tempVideoPath = path.join(os.tmpdir(), `${crypto.randomBytes(16).toString('hex')}${ext}`);
+      const tempThumbPath = path.join(os.tmpdir(), `${crypto.randomBytes(16).toString('hex')}.jpg`);
+
+      try {
+        // Write video to temp file
+        await fsPromises.writeFile(tempVideoPath, Buffer.from(fileBuffer));
+
+        // Generate video thumbnail
+        await new Promise((resolve, reject) => {
+          ffmpeg(tempVideoPath)
+            .screenshots({
+              timestamps: ['00:00:01'],
+              filename: path.basename(tempThumbPath),
+              folder: path.dirname(tempThumbPath),
+              size: '320x240'
+            })
+            .on('end', resolve)
+            .on('error', (err) => {
+              console.error('FFmpeg error:', err);
+              reject(err);
+            });
+        });
+
+        // Read and optimize thumbnail
+        const thumbnail = await sharp(tempThumbPath)
+          .jpeg({ quality: 80 })
+          .toBuffer();
+
+        reply.header('Content-Type', 'image/jpeg');
+        reply.header('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+        return reply.send(thumbnail);
+      } finally {
+        // Clean up temp files
+        try {
+          await fsPromises.unlink(tempVideoPath);
+          await fsPromises.unlink(tempThumbPath);
+        } catch (err) {
+          fastify.log.error('Error cleaning up temp files:', err);
+        }
+      }
+    } else {
+      return reply.notFound('File type not supported for thumbnail generation');
+    }
+  } catch (err) {
+    fastify.log.error('Error generating thumbnail:', err);
+    return reply.internalServerError('Failed to generate thumbnail');
+  }
+});
+
+
 async function reviewFilesForViolations() {
   console.log('Starting AI-powered content safety review…');
 
@@ -2062,15 +2355,11 @@ fastify.get('/api/health', async (req, reply) => {
 
 fastify.setNotFoundHandler((req, reply) => {
   if (req.raw.url.startsWith('/api/')) {
-    return reply.callNotFound();
+    return reply.code(404).send({ error: 'Not Found' });
   }
 
-  const hasExt = path.extname(req.raw.url) !== '';
-  if (!hasExt) {
-    return reply.sendFile('index.html');
-  }
-
-  return reply.code(404).type('text/html').sendFile('404.html');
+  // Remove the extension check since we want to serve index.html for all non-API routes
+  return reply.sendFile('index.html');
 });
 
 // --- STARTUP ---
@@ -2093,115 +2382,3 @@ const start = async () => {
 
 start();
 
-// GET /api/thumbnail/:folderId/*
-fastify.get('/api/thumbnail/:folderId/*', { preHandler: [fastify.authenticate] }, async (req, reply) => {
-  const { folderId } = req.params;
-  const filename = req.params['*'];
-  const key = `folders/${folderId}/${filename}`;
-
-  // Check folder permissions
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const meta = folders.find(f => f.folderId === folderId);
-  if (!meta) return reply.notFound('Folder not found');
-
-  let allowed = false;
-  const isOwner = meta.owner === req.user.username;
-
-  if (meta.isPublic || isOwner) {
-    allowed = true;
-  } else {
-    const friendPerms = (meta.friendPermissions || {})[req.user.username];
-    if (friendPerms?.view || friendPerms?.download) allowed = true;
-
-    if (!allowed) {
-      const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-      const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
-      const groupPermOk = myGroupIds.some(id => 
-        meta.groupPermissions?.[id]?.view === true || 
-        meta.groupPermissions?.[id]?.download === true
-      );
-      if (groupPermOk) allowed = true;
-    }
-  }
-
-  if (!allowed) return reply.forbidden('Access denied');
-
-  try {
-    // Get file from S3
-    const response = await s3.send(new GetObjectCommand({
-      Bucket: process.env.S3_BUCKET_NAME,
-      Key: key
-    }));
-
-    const fileBuffer = await response.Body.transformToByteArray();
-    const mimeType = mime.lookup(filename) || 'application/octet-stream';
-    const ext = path.extname(filename).toLowerCase();
-    
-    // Check if it's a video file by both MIME type and extension
-    const isVideo = mimeType.startsWith('video/') || ['.mp4', '.webm', '.mov', '.avi', '.mkv'].includes(ext);
-    const isImage = mimeType.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext);
-
-    if (isImage) {
-      // Generate image thumbnail
-      const thumbnail = await sharp(fileBuffer)
-        .resize(300, 300, {
-          fit: 'inside',
-          withoutEnlargement: true
-        })
-        .jpeg({ quality: 80 })
-        .toBuffer();
-
-      reply.header('Content-Type', 'image/jpeg');
-      reply.header('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
-      return reply.send(thumbnail);
-    } 
-    else if (isVideo) {
-      // Create a temporary file for the video
-      const tempVideoPath = path.join(os.tmpdir(), `${crypto.randomBytes(16).toString('hex')}${ext}`);
-      const tempThumbPath = path.join(os.tmpdir(), `${crypto.randomBytes(16).toString('hex')}.jpg`);
-
-      try {
-        // Write video to temp file
-        await fsPromises.writeFile(tempVideoPath, Buffer.from(fileBuffer));
-
-        // Generate video thumbnail
-        await new Promise((resolve, reject) => {
-          ffmpeg(tempVideoPath)
-            .screenshots({
-              timestamps: ['00:00:01'],
-              filename: path.basename(tempThumbPath),
-              folder: path.dirname(tempThumbPath),
-              size: '320x240'
-            })
-            .on('end', resolve)
-            .on('error', (err) => {
-              console.error('FFmpeg error:', err);
-              reject(err);
-            });
-        });
-
-        // Read and optimize thumbnail
-        const thumbnail = await sharp(tempThumbPath)
-          .jpeg({ quality: 80 })
-          .toBuffer();
-
-        reply.header('Content-Type', 'image/jpeg');
-        reply.header('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
-        return reply.send(thumbnail);
-      } finally {
-        // Clean up temp files
-        try {
-          await fsPromises.unlink(tempVideoPath);
-          await fsPromises.unlink(tempThumbPath);
-        } catch (err) {
-          fastify.log.error('Error cleaning up temp files:', err);
-        }
-      }
-    } else {
-      return reply.notFound('File type not supported for thumbnail generation');
-    }
-  } catch (err) {
-    fastify.log.error('Error generating thumbnail:', err);
-    return reply.internalServerError('Failed to generate thumbnail');
-  }
-});
