@@ -23,6 +23,12 @@ const { MongoClient }    = require('mongodb');
 const fetch              = require('node-fetch');
 const speakeasy          = require('speakeasy');
 const qrcode             = require('qrcode');
+const sharp              = require('sharp');
+const ffmpeg             = require('fluent-ffmpeg');
+const ffmpegInstaller    = require('@ffmpeg-installer/ffmpeg');
+
+// Configure ffmpeg path
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const fastify = fastifyLib({
   logger: { level: process.env.LOG_LEVEL || 'info' },
@@ -1839,10 +1845,26 @@ fastify.get('/api/recommended-files', { preHandler: [fastify.authenticate] }, as
   const folders = JSON.parse(raw);
   const username = req.user.username;
 
+  // Get user's group memberships
+  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+  const userGroups = groups.filter(g => g.members.includes(username));
+  const userGroupIds = userGroups.map(g => g.groupId);
+
   // Collect relevant folders
-  const relevant = folders.filter(f =>
-    f.owner === username || (f.friendPermissions && f.friendPermissions[username])
-  );
+  const relevant = folders.filter(f => {
+    // Owned by user
+    if (f.owner === username) return true;
+    
+    // Shared directly with user
+    if (f.friendPermissions && f.friendPermissions[username]) return true;
+    
+    // Shared through groups
+    if (f.groupPermissions) {
+      return userGroupIds.some(groupId => f.groupPermissions[groupId]);
+    }
+    
+    return false;
+  });
 
   // Collect files
   let allFiles = [];
@@ -1853,7 +1875,9 @@ fastify.get('/api/recommended-files', { preHandler: [fastify.authenticate] }, as
       folderName:   folder.folderName,
       filename:     obj.Key.slice(`folders/${folder.folderId}/`.length),
       size:         obj.Size,
-      lastModified: obj.LastModified
+      lastModified: obj.LastModified,
+      sharedVia:    folder.owner === username ? 'owned' : 
+                   (folder.friendPermissions?.[username] ? 'friend' : 'group')
     }));
     allFiles = allFiles.concat(files);
   }
@@ -2068,3 +2092,116 @@ const start = async () => {
 };
 
 start();
+
+// GET /api/thumbnail/:folderId/*
+fastify.get('/api/thumbnail/:folderId/*', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { folderId } = req.params;
+  const filename = req.params['*'];
+  const key = `folders/${folderId}/${filename}`;
+
+  // Check folder permissions
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const meta = folders.find(f => f.folderId === folderId);
+  if (!meta) return reply.notFound('Folder not found');
+
+  let allowed = false;
+  const isOwner = meta.owner === req.user.username;
+
+  if (meta.isPublic || isOwner) {
+    allowed = true;
+  } else {
+    const friendPerms = (meta.friendPermissions || {})[req.user.username];
+    if (friendPerms?.view || friendPerms?.download) allowed = true;
+
+    if (!allowed) {
+      const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+      const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
+      const groupPermOk = myGroupIds.some(id => 
+        meta.groupPermissions?.[id]?.view === true || 
+        meta.groupPermissions?.[id]?.download === true
+      );
+      if (groupPermOk) allowed = true;
+    }
+  }
+
+  if (!allowed) return reply.forbidden('Access denied');
+
+  try {
+    // Get file from S3
+    const response = await s3.send(new GetObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: key
+    }));
+
+    const fileBuffer = await response.Body.transformToByteArray();
+    const mimeType = mime.lookup(filename) || 'application/octet-stream';
+    const ext = path.extname(filename).toLowerCase();
+    
+    // Check if it's a video file by both MIME type and extension
+    const isVideo = mimeType.startsWith('video/') || ['.mp4', '.webm', '.mov', '.avi', '.mkv'].includes(ext);
+    const isImage = mimeType.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(ext);
+
+    if (isImage) {
+      // Generate image thumbnail
+      const thumbnail = await sharp(fileBuffer)
+        .resize(300, 300, {
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+        .jpeg({ quality: 80 })
+        .toBuffer();
+
+      reply.header('Content-Type', 'image/jpeg');
+      reply.header('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+      return reply.send(thumbnail);
+    } 
+    else if (isVideo) {
+      // Create a temporary file for the video
+      const tempVideoPath = path.join(os.tmpdir(), `${crypto.randomBytes(16).toString('hex')}${ext}`);
+      const tempThumbPath = path.join(os.tmpdir(), `${crypto.randomBytes(16).toString('hex')}.jpg`);
+
+      try {
+        // Write video to temp file
+        await fsPromises.writeFile(tempVideoPath, Buffer.from(fileBuffer));
+
+        // Generate video thumbnail
+        await new Promise((resolve, reject) => {
+          ffmpeg(tempVideoPath)
+            .screenshots({
+              timestamps: ['00:00:01'],
+              filename: path.basename(tempThumbPath),
+              folder: path.dirname(tempThumbPath),
+              size: '320x240'
+            })
+            .on('end', resolve)
+            .on('error', (err) => {
+              console.error('FFmpeg error:', err);
+              reject(err);
+            });
+        });
+
+        // Read and optimize thumbnail
+        const thumbnail = await sharp(tempThumbPath)
+          .jpeg({ quality: 80 })
+          .toBuffer();
+
+        reply.header('Content-Type', 'image/jpeg');
+        reply.header('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+        return reply.send(thumbnail);
+      } finally {
+        // Clean up temp files
+        try {
+          await fsPromises.unlink(tempVideoPath);
+          await fsPromises.unlink(tempThumbPath);
+        } catch (err) {
+          fastify.log.error('Error cleaning up temp files:', err);
+        }
+      }
+    } else {
+      return reply.notFound('File type not supported for thumbnail generation');
+    }
+  } catch (err) {
+    fastify.log.error('Error generating thumbnail:', err);
+    return reply.internalServerError('Failed to generate thumbnail');
+  }
+});

@@ -1,10 +1,8 @@
-        // Check authentication
         const token = localStorage.getItem('jwtToken');
         if (!token) {
             window.location.href = '/index.html';
         }
 
-        // DOM Elements
         const createGroupForm = document.getElementById('createGroupForm');
         const groupsList = document.getElementById('groupsList');
         const groupModal = document.getElementById('groupModal');
@@ -16,21 +14,17 @@
         const loading = document.querySelector('.loading');
         const closeModalBtn = document.getElementById('closeModalBtn');
 
-        // Current group being viewed
         let currentGroupId = null;
         let currentGroupName = null;
 
-        // Show loading spinner
         function showLoading() {
             loading.style.display = 'flex';
         }
 
-        // Hide loading spinner
         function hideLoading() {
             loading.style.display = 'none';
         }
 
-        // Create new group
         createGroupForm.onsubmit = async (e) => {
             e.preventDefault();
             showLoading();
@@ -56,7 +50,7 @@
                     },
                     body: JSON.stringify({
                         groupName,
-                        memberUsernames: memberUsernames // Explicitly name the parameter
+                        memberUsernames: memberUsernames 
                     })
                 });
 
@@ -76,7 +70,6 @@
             }
         };
 
-        // Load groups
         async function loadGroups() {
             showLoading();
             try {
@@ -86,7 +79,6 @@
                 const groups = await res.json();
 
                 if (groups.length === 0) {
-                    // Show empty state
                     groupsList.innerHTML = `
                         <div class="empty-state">
                             <i class="fas fa-users-slash"></i>
@@ -95,7 +87,6 @@
                         </div>
                     `;
                 } else {
-                    // Render groups
                     groupsList.innerHTML = groups.map(group => {
                         const memberCount = group.members.length;
                         
@@ -151,7 +142,6 @@
                         `;
                     }).join('');
                     
-                    // Load folder counts for each group
                     groups.forEach(group => {
                         fetchFolderCount(group.groupId);
                     });
@@ -168,7 +158,6 @@
             }
         }
         
-        // Fetch folder count for a group
         async function fetchFolderCount(groupId) {
             try {
                 const permsRes = await fetch(`/api/show-groups-permissions?groupId=${groupId}`, {
@@ -186,7 +175,6 @@
             }
         }
 
-        // Open group details modal
         async function openGroupDetails(groupId, groupName) {
             currentGroupId = groupId;
             currentGroupName = groupName;
@@ -224,13 +212,11 @@
                     `).join('');
                 }
 
-                // Load folder permissions
                 const permsRes = await fetch(`/api/show-groups-permissions?groupId=${groupId}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const permsData = await permsRes.json();
                 
-                // Get all folders first
                 const foldersRes = await fetch('/api/my-folders', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -245,9 +231,7 @@
                         </div>
                     `;
                 } else {
-                    // Show all folders with their current permissions
                     folderPermissions.innerHTML = await Promise.all(folders.map(async (folder) => {
-                        // Get current permissions for this folder
                         const currentPermsRes = await fetch(`/api/groups/view-current-permissions/${groupId}/${folder.folderId}`, {
                             headers: { 'Authorization': `Bearer ${token}` }
                         });
@@ -320,7 +304,6 @@
                     })).then(html => html.join(''));
                 }
 
-                // Update folder select dropdown
                 if (folders.length === 0) {
                     folderSelect.innerHTML = `<option value="">No folders available</option>`;
                     addFolderBtn.disabled = true;
@@ -353,7 +336,6 @@
                     }
                 }
 
-                // Show first tab by default
                 document.querySelectorAll('.tabs li').forEach((li, index) => {
                     if (index === 0) {
                         li.classList.add('is-active');
@@ -374,7 +356,6 @@
             }
         }
 
-        // Add folder permission
         addFolderBtn.onclick = async () => {
             const folderId = folderSelect.value;
             if (!folderId) {
@@ -409,7 +390,6 @@
             }
         };
 
-        // Update folder permission
         async function updateFolderPermission(folderId, permission, value) {
             showLoading();
             try {
@@ -431,23 +411,20 @@
                 showNotification('Permission updated successfully', 'is-success');
             } catch (err) {
                 showNotification(err.message, 'is-danger');
-                openGroupDetails(currentGroupId, currentGroupName); // Reload to reset checkboxes
+                openGroupDetails(currentGroupId, currentGroupName); 
             } finally {
                 hideLoading();
             }
         }
 
-        // Tab switching
         document.querySelectorAll('.tabs a').forEach(tab => {
             tab.onclick = (e) => {
                 e.preventDefault();
                 const tabName = e.target.closest('a').dataset.tab;
                 
-                // Update active tab
                 document.querySelectorAll('.tabs li').forEach(li => li.classList.remove('is-active'));
                 e.target.closest('li').classList.add('is-active');
                 
-                // Show selected content
                 document.querySelectorAll('.tab-content').forEach(content => {
                     content.style.display = 'none';
                 });
@@ -459,13 +436,11 @@
         document.querySelectorAll('.modal .delete, .modal-background, #closeModalBtn').forEach(el => {
             el.onclick = () => {
                 groupModal.classList.remove('is-active');
-                loadGroups(); // Refresh the main list
+                loadGroups(); 
             };
         });
 
-        // Show notification
         function showNotification(message, type = 'is-info') {
-            // Remove any existing notifications first
             document.querySelectorAll('.notification').forEach(note => note.remove());
             
             const notification = document.createElement('div');
@@ -483,22 +458,18 @@
             `;
             document.body.appendChild(notification);
 
-            // Auto remove after 5 seconds
             setTimeout(() => {
                 notification.remove();
             }, 5000);
 
-            // Allow manual close
             notification.querySelector('.delete').onclick = () => {
                 notification.remove();
             };
         }
 
-        // Logout
         document.getElementById('logoutBtn').onclick = () => {
             localStorage.removeItem('jwtToken');
             window.location.href = '/index.html';
         };
 
-        // Initial load
         loadGroups();

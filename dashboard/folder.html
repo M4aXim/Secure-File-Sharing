@@ -154,6 +154,836 @@
       white-space: nowrap;
       margin-left: 1rem;
     }
+
+    .grid-view {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+      padding: 1rem 0;
+    }
+
+    .grid-item {
+      background: #fff;
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .grid-item:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+
+    /* Improved Thumbnail Styles */
+    .thumbnail-container {
+      width: 100%;
+      height: 150px;
+      margin-bottom: 0.5rem;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #f8f9fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .thumbnail {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      transition: transform 0.3s ease;
+    }
+
+    .grid-item:hover .thumbnail {
+      transform: scale(1.05);
+    }
+
+    .thumbnail-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+    }
+
+    .file-type-icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .file-extension {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      background: rgba(74, 111, 165, 0.1);
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    /* File type specific colors */
+    .file-type-pdf .file-type-icon {
+      color: #e74c3c;
+    }
+
+    .file-type-doc .file-type-icon,
+    .file-type-docx .file-type-icon {
+      color: #3498db;
+    }
+
+    .file-type-xls .file-type-icon,
+    .file-type-xlsx .file-type-icon {
+      color: #2ecc71;
+    }
+
+    .file-type-ppt .file-type-icon,
+    .file-type-pptx .file-type-icon {
+      color: #e67e22;
+    }
+
+    .file-type-zip .file-type-icon,
+    .file-type-rar .file-type-icon {
+      color: #9b59b6;
+    }
+
+    .file-type-txt .file-type-icon {
+      color: #7f8c8d;
+    }
+
+    .file-type-html .file-type-icon,
+    .file-type-css .file-type-icon,
+    .file-type-js .file-type-icon {
+      color: #f39c12;
+    }
+
+    .file-type-mp3 .file-type-icon,
+    .file-type-wav .file-type-icon {
+      color: #1abc9c;
+    }
+
+    .file-type-mp4 .file-type-icon,
+    .file-type-avi .file-type-icon,
+    .file-type-mov .file-type-icon {
+      color: #3498db;
+    }
+
+    .file-type-folder .file-type-icon {
+      color: #f1c40f;
+    }
+
+    /* File preview overlay */
+    .preview-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .grid-item:hover .preview-overlay {
+      opacity: 1;
+    }
+
+    .preview-button {
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+      border: none;
+      border-radius: 4px;
+      padding: 0.5rem 1rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .preview-button:hover {
+      background: #fff;
+      transform: scale(1.05);
+    }
+
+    /* Audio thumbnail */
+    .audio-thumbnail {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    }
+
+    .audio-wave {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 60px;
+      width: 100px;
+      margin-bottom: 0.5rem;
+    }
+
+    .audio-wave span {
+      width: 4px;
+      margin: 0 2px;
+      background: #4a6fa5;
+      animation: wave 1s ease-in-out infinite;
+      border-radius: 2px;
+    }
+
+    .audio-wave span:nth-child(1) {
+      height: 15px;
+      animation-delay: 0s;
+    }
+
+    .audio-wave span:nth-child(2) {
+      height: 25px;
+      animation-delay: 0.2s;
+    }
+
+    .audio-wave span:nth-child(3) {
+      height: 35px;
+      animation-delay: 0.4s;
+    }
+
+    .audio-wave span:nth-child(4) {
+      height: 25px;
+      animation-delay: 0.6s;
+    }
+
+    .audio-wave span:nth-child(5) {
+      height: 15px;
+      animation-delay: 0.8s;
+    }
+
+    @keyframes wave {
+      0%, 100% {
+        transform: scaleY(1);
+      }
+      50% {
+        transform: scaleY(0.6);
+      }
+    }
+
+    /* Video thumbnail */
+    .video-thumbnail {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .video-play-button {
+      position: absolute;
+      width: 50px;
+      height: 50px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+    }
+
+    .video-play-button:after {
+      content: '';
+      display: inline-block;
+      border-style: solid;
+      border-width: 10px 0 10px 20px;
+      border-color: transparent transparent transparent #fff;
+      margin-left: 5px;
+    }
+
+    .grid-item:hover .video-play-button {
+      transform: scale(1.1);
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    /* Folder thumbnail */
+    .folder-thumbnail {
+      width: 80px;
+      height: 60px;
+      position: relative;
+      margin: 20px auto;
+    }
+
+    .folder-back {
+      position: absolute;
+      width: 100%;
+      height: 85%;
+      bottom: 0;
+      border-radius: 5px;
+      background: #f1c40f;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .folder-front {
+      position: absolute;
+      width: 40%;
+      height: 25%;
+      top: 0;
+      left: 0;
+      background: #f1c40f;
+      border-radius: 5px 0 0 0;
+    }
+
+    /* Quick action buttons */
+    .thumbnail-actions {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      display: flex;
+      gap: 5px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .grid-item:hover .thumbnail-actions {
+      opacity: 1;
+    }
+
+    .thumbnail-action-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #555;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 0.8rem;
+    }
+
+    .thumbnail-action-btn:hover {
+      background: #fff;
+      transform: scale(1.1);
+      color: #3273dc;
+    }
+
+    /* Image gallery styles */
+    .image-gallery-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1050;
+      background: rgba(0, 0, 0, 0.85);
+    }
+
+    .gallery-content {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      max-width: 90%;
+      max-height: 90%;
+    }
+
+    .gallery-image {
+      max-width: 100%;
+      max-height: 80vh;
+      display: block;
+      margin: 0 auto;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    .gallery-controls {
+      display: flex;
+      justify-content: center;
+      margin-top: 1rem;
+    }
+
+    .gallery-control {
+      background: rgba(255, 255, 255, 0.2);
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .gallery-control:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .gallery-close {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      color: #fff;
+      background: rgba(0, 0, 0, 0.5);
+      border: none;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .gallery-close:hover {
+      background: rgba(0, 0, 0, 0.7);
+    }
+
+    .list-view .file-item {
+      display: flex;
+      align-items: center;
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 0.75rem;
+      background-color: #fff;
+      transition: all 0.2s ease;
+      border: 1px solid rgba(0,0,0,0.05);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    .list-view .file-item:hover {
+      background-color: #f8f9fa;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+
+    .list-view .file-icon {
+      margin-right: 1.25rem;
+      color: #4a6fa5;
+      font-size: 1.5rem;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(74, 111, 165, 0.1);
+      border-radius: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .list-view .file-item:hover .file-icon {
+      background: rgba(74, 111, 165, 0.15);
+      transform: scale(1.05);
+    }
+
+    .list-view .file-info {
+      flex-grow: 1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .list-view .file-name {
+      font-weight: 500;
+      color: #2c3e50;
+      font-size: 1.1rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .list-view .file-meta {
+      color: #6c757d;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .list-view .file-meta span {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .list-view .file-meta i {
+      color: #4a6fa5;
+      font-size: 0.9rem;
+    }
+
+    .list-view .file-actions {
+      display: flex;
+      gap: 0.75rem;
+      opacity: 0.7;
+      transition: opacity 0.2s ease;
+    }
+
+    .list-view .file-item:hover .file-actions {
+      opacity: 1;
+    }
+
+    .list-view .file-action-btn {
+      padding: 0.5rem;
+      border-radius: 6px;
+      background: rgba(74, 111, 165, 0.1);
+      color: #4a6fa5;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+    }
+
+    .list-view .file-action-btn:hover {
+      background: rgba(74, 111, 165, 0.2);
+      transform: translateY(-1px);
+    }
+
+    .list-view .thumbnail-container {
+      width: 60px;
+      height: 60px;
+      margin-right: 1.25rem;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #f8f9fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex-shrink: 0;
+      border: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .list-view .thumbnail {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.3s ease;
+    }
+
+    .list-view .file-item:hover .thumbnail {
+      transform: scale(1.05);
+    }
+
+    .list-view .thumbnail-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    }
+
+    .list-view .file-type-icon {
+      font-size: 1.5rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .list-view .file-extension {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      background: rgba(74, 111, 165, 0.1);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+    }
+
+    .list-view .audio-thumbnail,
+    .list-view .video-thumbnail {
+      width: 60px;
+      height: 60px;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .list-view .video-play-button {
+      width: 30px;
+      height: 30px;
+    }
+
+    .list-view .video-play-button:after {
+      border-width: 6px 0 6px 12px;
+      margin-left: 3px;
+    }
+
+    .list-view .audio-wave {
+      height: 40px;
+      width: 60px;
+    }
+
+    .list-view .audio-wave span {
+      width: 3px;
+      margin: 0 1px;
+    }
+
+    /* File preview modal */
+    .file-preview-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1050;
+      background: rgba(0, 0, 0, 0.85);
+    }
+
+    .file-preview-content {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #fff;
+      width: 90%;
+      max-width: 900px;
+      height: 80%;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .file-preview-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem;
+      background: #f8f9fa;
+      border-bottom: 1px solid #dee2e6;
+    }
+
+    .file-preview-body {
+      flex-grow: 1;
+      overflow: auto;
+      padding: 1rem;
+    }
+
+    .file-preview-footer {
+      padding: 1rem;
+      background: #f8f9fa;
+      border-top: 1px solid #dee2e6;
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+    }
+
+    /* PDF Preview */
+    .pdf-preview {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    /* Text Preview */
+    .text-preview {
+      width: 100%;
+      height: 100%;
+      padding: 1rem;
+      background: #f8f9fa;
+      border-radius: 4px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      overflow: auto;
+    }
+
+    /* Accessibility Improvements */
+    .button:focus,
+    .input:focus,
+    .file-input:focus {
+      outline: 2px solid #3273dc;
+      outline-offset: 2px;
+    }
+
+    .file-item:focus-within {
+      box-shadow: 0 0 0 2px #3273dc;
+    }
+
+    /* Enhanced Visual Hierarchy */
+    .breadcrumb-area {
+      background: rgba(74, 111, 165, 0.05);
+      padding: 1rem;
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+      border: 1px solid rgba(74, 111, 165, 0.1);
+    }
+
+    .folder-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #2c3e50;
+    }
+
+    .folder-title i {
+      color: #f1c40f;
+    }
+
+    /* Enhanced Grid View */
+    .grid-item {
+      position: relative;
+      background: #fff;
+      border-radius: 12px;
+      padding: 1.25rem;
+      text-align: center;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      border: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .grid-item:hover {
+      transform: translateY(-4px) scale(1.02);
+      box-shadow: 0 8px 16px rgba(0,0,0,0.12);
+    }
+
+    /* Enhanced Drop Zone */
+    .drop-zone {
+      border: 2px dashed #4a6fa5;
+      border-radius: 12px;
+      padding: 2.5rem;
+      text-align: center;
+      margin-bottom: 2rem;
+      transition: all 0.3s ease;
+      background-color: rgba(74, 111, 165, 0.03);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .drop-zone::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(45deg, transparent 45%, rgba(74, 111, 165, 0.1) 50%, transparent 55%);
+      animation: shine 2s infinite;
+    }
+
+    @keyframes shine {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    .drop-zone.active {
+      background-color: rgba(74, 111, 165, 0.08);
+      border-color: #3273dc;
+      transform: scale(1.02);
+    }
+
+    /* Enhanced Progress Bar */
+    .progress-container {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: rgba(74, 111, 165, 0.05);
+      border-radius: 8px;
+    }
+
+    .progress {
+      height: 8px;
+      border-radius: 4px;
+      background-color: rgba(74, 111, 165, 0.1);
+    }
+
+    .progress::-webkit-progress-bar {
+      background-color: rgba(74, 111, 165, 0.1);
+      border-radius: 4px;
+    }
+
+    .progress::-webkit-progress-value {
+      background-color: #3273dc;
+      border-radius: 4px;
+      transition: width 0.3s ease;
+    }
+
+    /* Enhanced File Actions */
+    .file-actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .file-action-btn {
+      padding: 0.5rem;
+      border-radius: 6px;
+      background: rgba(74, 111, 165, 0.1);
+      color: #4a6fa5;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .file-action-btn:hover {
+      background: rgba(74, 111, 165, 0.2);
+      transform: translateY(-1px);
+    }
+
+    /* Enhanced Search Bar */
+    .search-container {
+      position: relative;
+      max-width: 300px;
+    }
+
+    .search-container .input {
+      padding-left: 2.5rem;
+      border-radius: 8px;
+      border: 1px solid rgba(74, 111, 165, 0.2);
+      transition: all 0.3s ease;
+    }
+
+    .search-container .input:focus {
+      border-color: #3273dc;
+      box-shadow: 0 0 0 3px rgba(50, 115, 220, 0.1);
+    }
+
+    .search-icon {
+      position: absolute;
+      left: 0.75rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #4a6fa5;
+    }
+
+    /* Enhanced Notifications */
+    .notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      padding: 1rem 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transform: translateY(-100px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      max-width: 350px;
+      background: #fff;
+      border-left: 4px solid #3273dc;
+    }
+
+    .notification.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .notification.success {
+      border-left-color: #48c774;
+    }
+
+    .notification.error {
+      border-left-color: #f14668;
+    }
+
+    .notification.warning {
+      border-left-color: #ffdd57;
+    }
   </style>
 </head>
 
@@ -161,35 +991,38 @@
   <section class="section">
     <div class="container">
       <div class="content-box">
-        <h1 class="title is-3 has-text-primary">
-          <i class="fas fa-folder-open mr-2"></i> Folder Contents
-        </h1>
-        <p class="subtitle is-6 has-text-grey">Folder ID: <span id="folderId" class="has-text-weight-bold"></span></p>
+        <div class="breadcrumb-area">
+          <h1 class="title is-3 folder-title">
+            <i class="fas fa-folder-open"></i>
+            <span>Folder Contents</span>
+          </h1>
+          <p class="subtitle is-6 has-text-grey">Folder ID: <span id="folderId" class="has-text-weight-bold"></span></p>
+        </div>
 
-        <div class="drop-zone" id="dropZone">
-          <i class="fas fa-cloud-upload-alt fa-3x mb-3" style="color: #4a6fa5;"></i>
+        <div class="drop-zone" id="dropZone" role="region" aria-label="File upload area">
+          <i class="fas fa-cloud-upload-alt fa-3x mb-3" style="color: #4a6fa5;" aria-hidden="true"></i>
           <p class="is-size-5 mb-2">Drag & drop files here</p>
           <p class="is-size-7 has-text-grey">or</p>
           <div class="file has-name is-centered my-3">
             <label class="file-label">
-              <input class="file-input" type="file" id="fileInput" name="file">
+              <input class="file-input" type="file" id="fileInput" name="file" aria-label="Choose file to upload">
               <span class="file-cta">
                 <span class="file-icon">
-                  <i class="fas fa-upload"></i>
+                  <i class="fas fa-upload" aria-hidden="true"></i>
                 </span>
                 <span class="file-label">Choose a file…</span>
               </span>
               <span class="file-name" id="fileName">No file selected</span>
             </label>
           </div>
-          <button class="button is-primary is-small" id="uploadButton" disabled>
+          <button class="button is-primary is-small" id="uploadButton" disabled aria-label="Upload selected file">
             <span class="icon">
-              <i class="fas fa-upload"></i>
+              <i class="fas fa-upload" aria-hidden="true"></i>
             </span>
             <span>Upload</span>
           </button>
 
-          <div class="progress-container" id="progressContainer">
+          <div class="progress-container" id="progressContainer" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
             <progress class="progress is-primary" id="uploadProgress" value="0" max="100"></progress>
             <p class="has-text-centered is-size-7 has-text-grey" id="progressText">0%</p>
           </div>
@@ -197,37 +1030,40 @@
 
         <div class="is-flex is-justify-content-space-between is-align-items-center mb-4">
           <div class="buttons">
-            <button class="button is-link is-small" id="addFriendButton">
+            <button class="button is-link is-small file-action-btn" id="addFriendButton" aria-label="Add friend to folder">
               <span class="icon">
-                <i class="fas fa-user-plus"></i>
+                <i class="fas fa-user-plus" aria-hidden="true"></i>
               </span>
               <span>Add Friend</span>
             </button>
-            <button class="button is-warning is-small" id="changePermissionButton">
-              <span class="icon"><i class="fas fa-user-cog"></i></span>
+            <button class="button is-warning is-small file-action-btn" id="changePermissionButton" aria-label="Change folder permissions">
+              <span class="icon"><i class="fas fa-user-cog" aria-hidden="true"></i></span>
               <span>Change Permission</span>
             </button>
-            <button class="button is-success is-small" id="makePublicButton">
-              <span class="icon"><i class="fas fa-globe"></i></span>
+            <button class="button is-success is-small file-action-btn" id="makePublicButton" aria-label="Make folder public">
+              <span class="icon"><i class="fas fa-globe" aria-hidden="true"></i></span>
               <span>Make Public</span>
             </button>
+            <button class="button is-info is-small file-action-btn" id="toggleViewButton" aria-label="Toggle view mode">
+              <span class="icon"><i class="fas fa-th-large" aria-hidden="true"></i></span>
+              <span>Grid View</span>
+            </button>
           </div>
-          <div class="field has-addons">
-            <div class="control">
-              <input class="input is-small" type="text" id="searchInput" placeholder="Search files...">
-            </div>
-            <div class="control">
-              <button class="button is-primary is-small" id="refreshButton">
-                <span class="icon">
-                  <i class="fas fa-sync-alt"></i>
-                </span>
-              </button>
-            </div>
+          <div class="search-container">
+            <span class="icon search-icon">
+              <i class="fas fa-search" aria-hidden="true"></i>
+            </span>
+            <input class="input is-small" type="text" id="searchInput" placeholder="Search files..." aria-label="Search files">
+            <button class="button is-primary is-small ml-2" id="refreshButton" aria-label="Refresh folder contents">
+              <span class="icon">
+                <i class="fas fa-sync-alt" aria-hidden="true"></i>
+              </span>
+            </button>
           </div>
         </div>
 
-        <div id="loadingSpinner" class="loading-spinner my-5"></div>
-        <div id="folderContents" class="mb-4"></div>
+        <div id="loadingSpinner" class="loading-spinner my-5" role="status" aria-label="Loading folder contents"></div>
+        <div id="folderContents" class="mb-4" role="list" aria-label="Folder contents"></div>
       </div>
     </div>
   </section>
@@ -247,6 +1083,46 @@
         <button class="button is-success" id="savePermissionsButton">Save changes</button>
         <button class="button" id="closePermissionModalFooter">Cancel</button>
       </footer>
+    </div>
+  </div>
+
+  <!-- Image Gallery Modal -->
+  <div class="image-gallery-modal" id="imageGalleryModal">
+    <button class="gallery-close" id="closeGallery">
+      <i class="fas fa-times"></i>
+    </button>
+    <div class="gallery-content">
+      <img src="" class="gallery-image" id="galleryImage" alt="Gallery Image">
+      <div class="gallery-controls">
+        <button class="gallery-control" id="prevImage">
+          <i class="fas fa-chevron-left"></i>
+        </button>
+        <button class="gallery-control" id="nextImage">
+          <i class="fas fa-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- File Preview Modal -->
+  <div class="file-preview-modal" id="filePreviewModal">
+    <div class="file-preview-content">
+      <div class="file-preview-header">
+        <h4 class="is-size-5" id="previewFileName">File Preview</h4>
+        <button class="delete" id="closeFilePreview"></button>
+      </div>
+      <div class="file-preview-body" id="filePreviewBody">
+        <!-- Dynamic content inserted here -->
+      </div>
+      <div class="file-preview-footer">
+        <button class="button is-primary is-small" id="downloadFileButton">
+          <span class="icon">
+            <i class="fas fa-download"></i>
+          </span>
+          <span>Download</span>
+        </button>
+        <button class="button is-danger is-small" id="closeFilePreviewButton">Close</button>
+      </div>
     </div>
   </div>
 

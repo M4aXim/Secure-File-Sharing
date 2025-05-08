@@ -1,3 +1,6 @@
+// Global variables
+let isGridView = localStorage.getItem('gridView') === 'true';
+
 document.addEventListener('DOMContentLoaded', async () => {
   const token       = localStorage.getItem('jwtToken');
   const urlParams   = new URLSearchParams(window.location.search);
@@ -7,6 +10,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
   folderIdSpan.textContent = folderId;
+
+  // Initialize view mode
+  updateViewMode();
+
+  // Add view toggle handler
+  document.getElementById('toggleViewButton').addEventListener('click', () => {
+    isGridView = !isGridView;
+    localStorage.setItem('gridView', isGridView);
+    updateViewMode();
+    fetchFolderContents();
+  });
 
   // 1) Check if the folder is public
   let isPublic = false;
@@ -98,6 +112,33 @@ closeNotification.addEventListener('click', () => {
   notification.classList.remove('show');
 });
 
+// Add this new function
+function updateViewMode() {
+  const toggleButton = document.getElementById('toggleViewButton');
+  const icon = toggleButton.querySelector('.icon i');
+  const text = toggleButton.querySelector('span:not(.icon)');
+  
+  if (isGridView) {
+    icon.className = 'fas fa-list';
+    text.textContent = 'List View';
+    folderContentsDiv.className = 'grid-view';
+  } else {
+    icon.className = 'fas fa-th-large';
+    text.textContent = 'Grid View';
+    folderContentsDiv.className = 'list-view';
+  }
+}
+
+// Add this helper function at the top level
+async function getThumbnailUrl(folderId, filename) {
+  const token = localStorage.getItem('jwtToken');
+  const response = await fetch(`/api/thumbnail/${folderId}/${encodeURIComponent(filename)}`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error('Failed to load thumbnail');
+  return URL.createObjectURL(await response.blob());
+}
+
 // Fetch & render folder contents
 async function fetchFolderContents() {
   const token = localStorage.getItem('jwtToken');
@@ -126,35 +167,88 @@ async function fetchFolderContents() {
     }
 
     const fileItems = contents.map((f,i) => {
-      const name = f.filename||`File${i}`, ext = f.type||'', size = formatFileSize(f.size), mod = formatDate(f.lastModified);
-      return `
-        <div class="file-item">
-          <div class="file-icon">
-            <i class="fas ${getFileIcon(ext)}"></i>
-          </div>
-          <div class="file-info">
-            <span class="file-name">${name}</span>
-            <div class="file-meta">
-              <span class="file-size">${size}</span>
-              <span class="file-date">${mod}</span>
+      const name = f.filename||`File${i}`;
+      const ext = f.type||'';
+      const size = formatFileSize(f.size);
+      const mod = formatDate(f.lastModified);
+      const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(name);
+      const isVideo = /\.(mp4|webm|mov)$/i.test(name);
+      const hasThumbnail = isImage || isVideo;
+
+      if (isGridView) {
+        return `
+          <div class="grid-item">
+            <div class="thumbnail-container">
+              ${hasThumbnail ? 
+                `<img class="thumbnail" data-folder="${folderId}" data-filename="${name}" alt="${name}" loading="lazy">` :
+                `<div class="thumbnail-placeholder"><i class="fas ${getFileIcon(ext)}"></i></div>`
+              }
             </div>
-          </div>
-          <div class="file-actions">
-            <button class="button is-small is-info download-button" data-filename="${name}">
-              <span class="icon"><i class="fas fa-download"></i></span>
-            </button>
-            <button class="button is-small is-primary view-button"    data-filename="${name}">
-              <span class="icon"><i class="fas fa-eye"></i></span>
-            </button>
-            <button class="button is-small is-danger delete-button"  data-filename="${name}">
-              <span class="icon"><i class="fas fa-trash-alt"></i></span>
-            </button>
-          </div>
-        </div>`;
+            <div class="file-name">${name}</div>
+            <div class="file-meta">
+              <div>${size}</div>
+              <div>${mod}</div>
+            </div>
+            <div class="file-actions">
+              <button class="button is-small is-info download-button" data-filename="${name}">
+                <span class="icon"><i class="fas fa-download"></i></span>
+              </button>
+              <button class="button is-small is-primary view-button" data-filename="${name}">
+                <span class="icon"><i class="fas fa-eye"></i></span>
+              </button>
+              <button class="button is-small is-danger delete-button" data-filename="${name}">
+                <span class="icon"><i class="fas fa-trash-alt"></i></span>
+              </button>
+            </div>
+          </div>`;
+      } else {
+        return `
+          <div class="file-item">
+            <div class="file-icon">
+              ${hasThumbnail ? 
+                `<img class="thumbnail" data-folder="${folderId}" data-filename="${name}" alt="${name}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;">` :
+                `<i class="fas ${getFileIcon(ext)}"></i>`
+              }
+            </div>
+            <div class="file-info">
+              <span class="file-name">${name}</span>
+              <div class="file-meta">
+                <span class="file-size">${size}</span>
+                <span class="file-date">${mod}</span>
+              </div>
+            </div>
+            <div class="file-actions">
+              <button class="button is-small is-info download-button" data-filename="${name}">
+                <span class="icon"><i class="fas fa-download"></i></span>
+              </button>
+              <button class="button is-small is-primary view-button" data-filename="${name}">
+                <span class="icon"><i class="fas fa-eye"></i></span>
+              </button>
+              <button class="button is-small is-danger delete-button" data-filename="${name}">
+                <span class="icon"><i class="fas fa-trash-alt"></i></span>
+              </button>
+            </div>
+          </div>`;
+      }
     }).join('');
 
     folderContentsDiv.innerHTML = fileItems;
 
+    // Load thumbnails for all thumbnail images
+    document.querySelectorAll('.thumbnail').forEach(img => {
+      const folderId = img.dataset.folder;
+      const filename = img.dataset.filename;
+      getThumbnailUrl(folderId, filename)
+        .then(url => {
+          img.src = url;
+        })
+        .catch(err => {
+          console.error('Failed to load thumbnail:', err);
+          img.src = ''; // Clear the src to show the placeholder
+        });
+    });
+
+    // Add event listeners
     document.querySelectorAll('.download-button').forEach(btn =>
       btn.addEventListener('click', () => downloadFile(btn.dataset.filename))
     );
