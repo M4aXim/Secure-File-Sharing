@@ -26,6 +26,7 @@ const qrcode             = require('qrcode');
 const sharp              = require('sharp');
 const ffmpeg             = require('fluent-ffmpeg');
 const ffmpegInstaller    = require('@ffmpeg-installer/ffmpeg');
+const XLSX               = require('xlsx');
 
 // Configure ffmpeg path
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
@@ -471,9 +472,34 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
     ContentLength: fileBuffer.length
   }));
 
+  // Send email notification to folder owner if the uploader is not the owner
+  if (!isOwner) {
+    try {
+      const owner = await usersColl.findOne({ username: meta.owner });
+      if (owner && owner.email) {
+        await transporter.sendMail({
+          from: `"File Sharing" <${process.env.EMAIL_USER}>`,
+          to: owner.email,
+          subject: `New File Uploaded to Your Folder: ${meta.folderName}`,
+          text: `Hello ${meta.owner},\n\n${req.user.username} has uploaded a new file "${upload.filename}" to your folder "${meta.folderName}".\n\nFile details:\n- Name: ${upload.filename}\n- Size: ${formatFileSize(fileBuffer.length)}\n- Type: ${upload.mimetype || 'Unknown'}\n\nYou can view this file in your folder.\n\nThank you.`
+        });
+      }
+    } catch (err) {
+      fastify.log.error('Failed to send upload notification email:', err);
+    }
+  }
+
   await logActivity(req, 'upload-file', { folderId, filename });
   return { message: 'File uploaded', filename };
 });
+
+function formatFileSize(bytes) {
+  if (!bytes) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+}
 
 // GET /api/generate-download-token
 fastify.get('/api/generate-download-token', { preHandler: [fastify.authenticate] }, async (req, reply) => {
@@ -2106,6 +2132,271 @@ fastify.get('/api/recommended-files', { preHandler: [fastify.authenticate] }, as
   }
 });
 
+// GET /api/owner/export/users
+fastify.get('/api/owner/export/users', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  if (req.user.username !== OWNER_USERNAME) {
+    return reply.forbidden('Only owner can export user data');
+  }
+
+  try {
+    const users = await usersColl.find({}, { projection: { password: 0 } }).toArray();
+    
+    // Transform data for Excel
+    const excelData = users.map(user => ({
+      Username: user.username,
+      Email: user.email,
+      Role: user.role,
+      'Created At': new Date(user.createdAt).toLocaleString(),
+      'MFA Enabled': user.mfa?.enabled ? 'Yes' : 'No',
+      'Original IP': user.originalIp || 'N/A'
+    }));
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(excelData);
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Users');
+
+    // Generate buffer
+    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    // Set response headers
+    reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    reply.header('Content-Disposition', 'attachment; filename=users.xlsx');
+
+    await logActivity(req, 'export-users-excel');
+    return reply.send(excelBuffer);
+  } catch (err) {
+    fastify.log.error('Error exporting users:', err);
+    return reply.internalServerError('Failed to export users');
+  }
+});
+
+// GET /api/owner/export/folders
+fastify.get('/api/owner/export/folders', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  if (req.user.username !== OWNER_USERNAME) {
+    return reply.forbidden('Only owner can export folder data');
+  }
+
+  try {
+    const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+    
+    // Transform data for Excel
+    const excelData = folders.map(folder => ({
+      'Folder Name': folder.folderName,
+      'Folder ID': folder.folderId,
+      Owner: folder.owner,
+      'Created At': new Date(folder.createdAt).toLocaleString(),
+      'Is Public': folder.isPublic ? 'Yes' : 'No',
+      'Friend Count': Object.keys(folder.friendPermissions || {}).length,
+      'Group Count': Object.keys(folder.groupPermissions || {}).length,
+      'Flagged': folder.flagged ? 'Yes' : 'No'
+    }));
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(excelData);
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Folders');
+
+    // Generate buffer
+    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    // Set response headers
+    reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    reply.header('Content-Disposition', 'attachment; filename=folders.xlsx');
+
+    await logActivity(req, 'export-folders-excel');
+    return reply.send(excelBuffer);
+  } catch (err) {
+    fastify.log.error('Error exporting folders:', err);
+    return reply.internalServerError('Failed to export folders');
+  }
+});
+
+// GET /api/owner/export/audit-log
+fastify.get('/api/owner/export/audit-log', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  if (req.user.username !== OWNER_USERNAME) {
+    return reply.forbidden('Only owner can export audit log');
+  }
+
+  try {
+    const raw = await fsPromises.readFile(AUDIT_LOG, 'utf8');
+    const lines = raw.split('\n').filter(Boolean);
+    const entries = lines.map(line => {
+      try { return JSON.parse(line); } catch { return null; }
+    }).filter(Boolean);
+
+    // Transform data for Excel
+    const excelData = entries.map(entry => ({
+      Timestamp: new Date(entry.timestamp).toLocaleString(),
+      User: entry.user,
+      Activity: entry.activity,
+      IP: entry.ip,
+      Method: entry.method,
+      URL: entry.url,
+      Details: JSON.stringify(entry.details || {})
+    }));
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(excelData);
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Audit Log');
+
+    // Generate buffer
+    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    // Set response headers
+    reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    reply.header('Content-Disposition', 'attachment; filename=audit-log.xlsx');
+
+    await logActivity(req, 'export-audit-log-excel');
+    return reply.send(excelBuffer);
+  } catch (err) {
+    fastify.log.error('Error exporting audit log:', err);
+    return reply.internalServerError('Failed to export audit log');
+  }
+});
+
+// GET /api/owner/export/groups
+fastify.get('/api/owner/export/groups', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  if (req.user.username !== OWNER_USERNAME) {
+    return reply.forbidden('Only owner can export group data');
+  }
+
+  try {
+    const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+    
+    // Transform data for Excel
+    const excelData = groups.map(group => ({
+      'Group Name': group.groupName,
+      'Group ID': group.groupId,
+      Owner: group.owner,
+      'Created At': new Date(group.createdAt).toLocaleString(),
+      'Member Count': group.members.length,
+      'Pending Invites': (group.invitedUsers || []).length,
+      'Flagged': group.flagged ? 'Yes' : 'No',
+      'Flag Reason': group.flagReason || 'N/A',
+      'Flagged By': group.flaggedBy || 'N/A',
+      'Flagged At': group.flaggedAt ? new Date(group.flaggedAt).toLocaleString() : 'N/A',
+      Members: group.members.join(', ')
+    }));
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(excelData);
+
+    // Add worksheet to workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Groups');
+
+    // Generate buffer
+    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    // Set response headers
+    reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    reply.header('Content-Disposition', 'attachment; filename=groups.xlsx');
+
+    await logActivity(req, 'export-groups-excel');
+    return reply.send(excelBuffer);
+  } catch (err) {
+    fastify.log.error('Error exporting groups:', err);
+    return reply.internalServerError('Failed to export groups');
+  }
+});
+
+// GET /api/owner/export/all
+fastify.get('/api/owner/export/all', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  if (req.user.username !== OWNER_USERNAME) {
+    return reply.forbidden('Only owner can export all data');
+  }
+
+  try {
+    // Create a new workbook
+    const wb = XLSX.utils.book_new();
+
+    // Export Users
+    const users = await usersColl.find({}, { projection: { password: 0 } }).toArray();
+    const usersData = users.map(user => ({
+      Username: user.username,
+      Email: user.email,
+      Role: user.role,
+      'Created At': new Date(user.createdAt).toLocaleString(),
+      'MFA Enabled': user.mfa?.enabled ? 'Yes' : 'No',
+      'Original IP': user.originalIp || 'N/A'
+    }));
+    const usersWs = XLSX.utils.json_to_sheet(usersData);
+    XLSX.utils.book_append_sheet(wb, usersWs, 'Users');
+
+    // Export Folders
+    const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+    const foldersData = folders.map(folder => ({
+      'Folder Name': folder.folderName,
+      'Folder ID': folder.folderId,
+      Owner: folder.owner,
+      'Created At': new Date(folder.createdAt).toLocaleString(),
+      'Is Public': folder.isPublic ? 'Yes' : 'No',
+      'Friend Count': Object.keys(folder.friendPermissions || {}).length,
+      'Group Count': Object.keys(folder.groupPermissions || {}).length,
+      'Flagged': folder.flagged ? 'Yes' : 'No'
+    }));
+    const foldersWs = XLSX.utils.json_to_sheet(foldersData);
+    XLSX.utils.book_append_sheet(wb, foldersWs, 'Folders');
+
+    // Export Groups
+    const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+    const groupsData = groups.map(group => ({
+      'Group Name': group.groupName,
+      'Group ID': group.groupId,
+      Owner: group.owner,
+      'Created At': new Date(group.createdAt).toLocaleString(),
+      'Member Count': group.members.length,
+      'Pending Invites': (group.invitedUsers || []).length,
+      'Flagged': group.flagged ? 'Yes' : 'No',
+      'Flag Reason': group.flagReason || 'N/A',
+      'Flagged By': group.flaggedBy || 'N/A',
+      'Flagged At': group.flaggedAt ? new Date(group.flaggedAt).toLocaleString() : 'N/A',
+      Members: group.members.join(', ')
+    }));
+    const groupsWs = XLSX.utils.json_to_sheet(groupsData);
+    XLSX.utils.book_append_sheet(wb, groupsWs, 'Groups');
+
+    // Export Audit Log
+    const raw = await fsPromises.readFile(AUDIT_LOG, 'utf8');
+    const lines = raw.split('\n').filter(Boolean);
+    const entries = lines.map(line => {
+      try { return JSON.parse(line); } catch { return null; }
+    }).filter(Boolean);
+    const auditData = entries.map(entry => ({
+      Timestamp: new Date(entry.timestamp).toLocaleString(),
+      User: entry.user,
+      Activity: entry.activity,
+      IP: entry.ip,
+      Method: entry.method,
+      URL: entry.url,
+      Details: JSON.stringify(entry.details || {})
+    }));
+    const auditWs = XLSX.utils.json_to_sheet(auditData);
+    XLSX.utils.book_append_sheet(wb, auditWs, 'Audit Log');
+
+    // Generate buffer
+    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    // Set response headers
+    reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    reply.header('Content-Disposition', 'attachment; filename=complete-export.xlsx');
+
+    await logActivity(req, 'export-all-data-excel');
+    return reply.send(excelBuffer);
+  } catch (err) {
+    fastify.log.error('Error exporting all data:', err);
+    return reply.internalServerError('Failed to export data');
+  }
+});
+
 // GET /api/thumbnail/:folderId/*
 fastify.get('/api/thumbnail/:folderId/*', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { folderId } = req.params;
@@ -2380,3 +2671,4 @@ const start = async () => {
 };
 
 start();
+
