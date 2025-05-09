@@ -2358,7 +2358,6 @@ fastify.setNotFoundHandler((req, reply) => {
     return reply.code(404).send({ error: 'Not Found' });
   }
 
-  // Remove the extension check since we want to serve index.html for all non-API routes
   return reply.sendFile('index.html');
 });
 
@@ -2381,4 +2380,3 @@ const start = async () => {
 };
 
 start();
-

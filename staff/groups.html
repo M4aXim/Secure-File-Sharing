@@ -1,122 +1,394 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Staff - Group Monitoring</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff Group Management</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    .dashboard-title {
+      margin-bottom: 20px;
+    }
+    .card {
+      margin-bottom: 20px;
+      height: 100%;
+    }
+    .card-header {
+      background-color: #f5f5f5;
+      border-bottom: 1px solid #dbdbdb;
+    }
+    .group-card:hover {
+      box-shadow: 0 0.5em 1em -0.125em rgba(10, 10, 10, 0.1), 0 0 0 1px rgba(10, 10, 10, 0.02);
+      cursor: pointer;
+    }
+    .loading-spinner {
+      display: none;
+      justify-content: center;
+      align-items: center;
+      height: 50px;
+    }
+    .loading-spinner.active {
+      display: flex;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 5px;
+      max-height: 300px;
+      overflow: auto;
+    }
+  </style>
 </head>
-<body class="bg-gray-100 text-gray-800 font-sans min-h-screen">
+<body>
 
-    <!-- Sidebar Navigation -->
-    <div class="fixed top-0 left-0 w-64 h-screen bg-white shadow-md flex flex-col p-4 z-40">
-        <div class="flex items-center mb-4 text-lg font-bold text-blue-700">
-            <i class="fas fa-shield-alt mr-2 text-white bg-blue-500 p-2 rounded"></i>
-            Staff Portal
+<section class="section">
+  <div class="container">
+    <h1 class="title dashboard-title">Staff Group Management</h1>
+    
+    <div class="columns is-multiline">
+      <!-- Group List -->
+      <div class="column is-half">
+        <div class="card">
+          <header class="card-header">
+            <p class="card-header-title">Groups List</p>
+            <button class="button is-primary is-small is-light ml-auto" onclick="loadGroups()">
+              <span class="icon"><i class="fas fa-sync-alt"></i></span>
+              <span>Refresh</span>
+            </button>
+          </header>
+          <div class="card-content">
+            <div id="groupList" class="content"></div>
+            <div id="groupLoading" class="loading-spinner">Loading...</div>
+          </div>
         </div>
-        <nav class="flex-1 overflow-y-auto space-y-2">
-            <a href="/staff/dashboard.html" class="flex items-center px-3 py-2 rounded hover:bg-blue-100 text-gray-600">
-                <i class="fas fa-tachometer-alt mr-2"></i> Dashboard
-            </a>
-            <a href="/staff/groups.html" class="flex items-center px-3 py-2 rounded bg-blue-500 text-white">
-                <i class="fas fa-user-friends mr-2"></i> Groups
-            </a>
-            <a href="/staff/audit-log.html" class="flex items-center px-3 py-2 rounded hover:bg-blue-100 text-gray-600">
-                <i class="fas fa-history mr-2"></i> Audit Log
-            </a>
-            <a href="#" class="flex items-center px-3 py-2 rounded hover:bg-blue-100 text-gray-600">
-                <i class="fas fa-flag mr-2"></i> Reports
-            </a>
-            <a href="#" class="flex items-center px-3 py-2 rounded hover:bg-blue-100 text-gray-600">
-                <i class="fas fa-cog mr-2"></i> Settings
-            </a>
-        </nav>
-        <div class="mt-4 text-xs text-gray-500">
-            <i class="fas fa-user-shield mr-1"></i> Logged in as Admin
+      </div>
+
+      <!-- Group Stats -->
+      <div class="column is-half">
+        <div class="card">
+          <header class="card-header">
+            <p class="card-header-title">Group Statistics</p>
+            <button class="button is-info is-small is-light ml-auto" onclick="loadStats()">
+              <span class="icon"><i class="fas fa-chart-bar"></i></span>
+              <span>Refresh</span>
+            </button>
+          </header>
+          <div class="card-content">
+            <pre id="groupStats">No statistics loaded.</pre>
+            <div id="statsLoading" class="loading-spinner">Loading...</div>
+          </div>
         </div>
-    </div>
+      </div>
 
-    <!-- Main Content -->
-    <div class="ml-64 p-6 space-y-6">
-        <h1 class="text-2xl font-bold mb-4">Group Monitoring</h1>
-
-        <!-- Stats Overview -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="bg-white rounded-lg shadow p-4 flex items-center space-x-4 transition hover:shadow-lg">
-                <div class="text-blue-500 text-2xl"><i class="fas fa-user-friends"></i></div>
-                <div>
-                    <h3 class="font-semibold">Total Groups</h3>
-                    <p id="totalGroups" class="text-gray-600">-</p>
+      <!-- Group Activity -->
+      <div class="column is-full">
+        <div class="card">
+          <header class="card-header">
+            <p class="card-header-title">View Group Activity</p>
+            <div class="card-header-icon">
+              <div class="field has-addons">
+                <div class="control">
+                  <div class="select is-small">
+                    <select id="activityFilter">
+                      <option value="all">All Activities</option>
+                      <option value="login">Logins</option>
+                      <option value="file">File Operations</option>
+                      <option value="member">Member Changes</option>
+                      <option value="folder">Folder Changes</option>
+                    </select>
+                  </div>
                 </div>
-            </div>
-            <div class="bg-white rounded-lg shadow p-4 flex items-center space-x-4 transition hover:shadow-lg">
-                <div class="text-green-500 text-2xl"><i class="fas fa-users"></i></div>
-                <div>
-                    <h3 class="font-semibold">Total Members</h3>
-                    <p id="totalMembers" class="text-gray-600">-</p>
+                <div class="control">
+                  <button class="button is-small is-info" onclick="applyActivityFilter()">
+                    <span class="icon"><i class="fas fa-filter"></i></span>
+                    <span>Filter</span>
+                  </button>
                 </div>
+              </div>
             </div>
-            <div class="bg-white rounded-lg shadow p-4 flex items-center space-x-4 transition hover:shadow-lg">
-                <div class="text-red-500 text-2xl"><i class="fas fa-flag"></i></div>
-                <div>
-                    <h3 class="font-semibold">Flagged Groups</h3>
-                    <p id="flaggedGroups" class="text-gray-600">-</p>
-                </div>
-            </div>
-            <div class="bg-white rounded-lg shadow p-4 flex items-center space-x-4 transition hover:shadow-lg">
-                <div class="text-orange-500 text-2xl"><i class="fas fa-envelope"></i></div>
-                <div>
-                    <h3 class="font-semibold">Pending Invites</h3>
-                    <p id="pendingInvites" class="text-gray-600">-</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Groups List -->
-        <div class="bg-white rounded-lg shadow-md">
-            <div class="flex justify-between items-center p-4 border-b border-gray-200">
-                <h2 class="text-xl font-semibold">All Groups</h2>
-                <div class="relative">
-                    <input type="text" placeholder="Search groups..." id="groupSearch" class="px-4 py-2 border rounded-md focus:outline-none focus:ring focus:ring-blue-200">
-                </div>
-            </div>
-            <div id="groupsList" class="p-4 space-y-4">
-                <!-- Groups will be loaded here by JavaScript -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Group Details Modal -->
-    <div id="groupModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
-        <div class="bg-white rounded-lg max-w-lg w-full p-6 space-y-4">
-            <header class="flex justify-between items-center">
-                <h3 id="modalGroupName" class="text-xl font-semibold">Group Details</h3>
-                <button class="text-gray-500 hover:text-red-500" id="closeModalBtn">&times;</button>
-            </header>
-            <section>
-                <div class="space-y-4">
-                    <div id="membersList">
-                        <!-- Members will be loaded here -->
-                    </div>
-                    <div id="activityList" class="hidden">
-                        <!-- Activity will be loaded here -->
-                    </div>
-                </div>
-            </section>
-            <footer class="flex justify-end space-x-2">
-                <button class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600" id="flagGroupBtn">
-                    <i class="fas fa-flag mr-2"></i> Flag Group
+          </header>
+          <div class="card-content">
+            <div class="field has-addons">
+              <div class="control is-expanded">
+                <input class="input" type="text" id="activityGroupId" placeholder="Enter Group ID">
+              </div>
+              <div class="control">
+                <button class="button is-warning" onclick="viewGroupActivity()">
+                  <span class="icon"><i class="fas fa-eye"></i></span>
+                  <span>View Activity</span>
                 </button>
-                <button class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600" id="closeModalBtn">Close</button>
-            </footer>
+              </div>
+            </div>
+            <div id="activityList" class="mt-4">
+              <div class="notification is-light">
+                Enter a Group ID and click "View Activity" to see the group's activity history.
+              </div>
+            </div>
+            <div id="activityLoading" class="loading-spinner">Loading...</div>
+          </div>
         </div>
+      </div>
+
+      <!-- Flag Group -->
+      <div class="column is-full">
+        <div class="card">
+          <header class="card-header">
+            <p class="card-header-title">Flag Group</p>
+          </header>
+          <div class="card-content">
+            <div class="field">
+              <input class="input" type="text" id="flagGroupId" placeholder="Enter Group ID">
+            </div>
+            <div class="field mt-2">
+              <textarea class="textarea" id="flagReason" placeholder="Enter reason for flagging"></textarea>
+            </div>
+            <button class="button is-danger is-fullwidth mt-2" onclick="flagGroup()">
+              <span class="icon"><i class="fas fa-flag"></i></span>
+              <span>Flag Group</span>
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
-    <script src="/javascript/staff/groups.js"></script>
-    <script>
-        // JavaScript to toggle modal
-        document.getElementById('closeModalBtn').addEventListener('click', () => {
-            document.getElementById('groupModal').classList.add('hidden');
-        });
-    </script>
+  </div>
+</section>
+
+<script>
+  const token = localStorage.getItem('jwtToken');
+
+  async function loadGroups() {
+    toggleLoading('groupLoading', true);
+    try {
+      const response = await fetch('/api/staff/groups', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      
+      const groupList = document.getElementById('groupList');
+      groupList.innerHTML = '';
+      
+      if (!data.groups || data.groups.length === 0) {
+        groupList.innerHTML = '<p class="has-text-centered">No groups found</p>';
+        return;
+      }
+
+      // Create a table for groups
+      const table = document.createElement('table');
+      table.className = 'table is-fullwidth is-hoverable';
+      table.innerHTML = `
+        <thead>
+          <tr>
+            <th>Group Name</th>
+            <th>Owner</th>
+            <th>Members</th>
+            <th>Folders</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      `;
+
+      const tbody = table.querySelector('tbody');
+      
+      data.groups.forEach(group => {
+        const row = document.createElement('tr');
+        const createdDate = new Date(group.createdAt).toLocaleDateString();
+        
+        row.innerHTML = `
+          <td>
+            <div class="is-flex is-align-items-center">
+              <span class="icon-text">
+                <span class="icon">
+                  <i class="fas fa-users"></i>
+                </span>
+                <span>${group.groupName}</span>
+              </span>
+              ${group.flagged ? '<span class="icon has-text-danger ml-2"><i class="fas fa-flag"></i></span>' : ''}
+            </div>
+          </td>
+          <td>
+            <span class="tag is-primary is-light">${group.owner}</span>
+          </td>
+          <td>
+            <div class="is-flex is-align-items-center">
+              <span class="tag is-info is-light mr-2">${group.memberCount} members</span>
+              ${group.pendingInviteCount > 0 ? 
+                `<span class="tag is-warning is-light">${group.pendingInviteCount} pending</span>` : 
+                ''}
+            </div>
+          </td>
+          <td>
+            <span class="tag is-link is-light">${group.folderCount} folders</span>
+          </td>
+          <td>
+            <span class="has-text-grey">${createdDate}</span>
+          </td>
+        `;
+        
+        tbody.appendChild(row);
+      });
+
+      groupList.appendChild(table);
+    } catch (error) {
+      console.error('Failed to load groups:', error);
+      document.getElementById('groupList').innerHTML = `
+        <div class="notification is-danger">
+          Failed to load groups. Please try again.
+        </div>
+      `;
+    } finally {
+      toggleLoading('groupLoading', false);
+    }
+  }
+
+  async function loadStats() {
+    toggleLoading('statsLoading', true);
+    const response = await fetch('/api/staff/groups/stats', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await response.json();
+    document.getElementById('groupStats').innerText = JSON.stringify(data, null, 2);
+    toggleLoading('statsLoading', false);
+  }
+
+  async function viewGroupActivity() {
+    const groupId = document.getElementById('activityGroupId').value;
+    if (!groupId) {
+      showNotification('Please enter a Group ID', 'warning');
+      return;
+    }
+
+    toggleLoading('activityLoading', true);
+    try {
+      const response = await fetch(`/api/staff/groups/${groupId}/activity`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await response.json();
+      
+      if (!data.activities || data.activities.length === 0) {
+        document.getElementById('activityList').innerHTML = `
+          <div class="notification is-light">
+            No activity found for this group.
+          </div>
+        `;
+        return;
+      }
+
+      const activityList = document.getElementById('activityList');
+      activityList.innerHTML = '';
+
+      data.activities.forEach(activity => {
+        const activityCard = document.createElement('div');
+        activityCard.className = 'box mb-3';
+        
+        const timestamp = new Date(activity.timestamp).toLocaleString();
+        const activityType = getActivityType(activity.type);
+        
+        activityCard.innerHTML = `
+          <div class="is-flex is-justify-content-space-between is-align-items-center">
+            <div>
+              <span class="tag ${activityType.color} is-light mr-2">${activityType.label}</span>
+              <span class="has-text-weight-medium">${activity.user}</span>
+            </div>
+            <span class="has-text-grey is-size-7">${timestamp}</span>
+          </div>
+          <div class="content mt-2">
+            <p class="mb-2">${activity.message}</p>
+            <div class="tags">
+              <span class="tag is-info is-light">
+                <span class="icon is-small"><i class="fas fa-network-wired"></i></span>
+                <span>${activity.ip}</span>
+              </span>
+              <span class="tag is-primary is-light">
+                <span class="icon is-small"><i class="fas fa-globe"></i></span>
+                <span>${activity.userAgent}</span>
+              </span>
+            </div>
+          </div>
+        `;
+        
+        activityList.appendChild(activityCard);
+      });
+    } catch (error) {
+      console.error('Failed to load activity:', error);
+      document.getElementById('activityList').innerHTML = `
+        <div class="notification is-danger">
+          Failed to load activity. Please try again.
+        </div>
+      `;
+    } finally {
+      toggleLoading('activityLoading', false);
+    }
+  }
+
+  function getActivityType(type) {
+    const types = {
+      'login': { label: 'Login', color: 'is-success' },
+      'file_upload': { label: 'File Upload', color: 'is-info' },
+      'file_download': { label: 'File Download', color: 'is-info' },
+      'file_delete': { label: 'File Delete', color: 'is-danger' },
+      'member_add': { label: 'Member Added', color: 'is-primary' },
+      'member_remove': { label: 'Member Removed', color: 'is-warning' },
+      'folder_create': { label: 'Folder Created', color: 'is-link' },
+      'folder_delete': { label: 'Folder Deleted', color: 'is-danger' }
+    };
+    return types[type] || { label: type, color: 'is-light' };
+  }
+
+  function applyActivityFilter() {
+    const filter = document.getElementById('activityFilter').value;
+    const activities = document.querySelectorAll('#activityList .box');
+    
+    activities.forEach(activity => {
+      const activityType = activity.querySelector('.tag').textContent.toLowerCase();
+      if (filter === 'all' || activityType.includes(filter)) {
+        activity.style.display = 'block';
+      } else {
+        activity.style.display = 'none';
+      }
+    });
+  }
+
+  function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `notification is-${type}`;
+    notification.innerHTML = `
+      <button class="delete"></button>
+      ${message}
+    `;
+    
+    document.querySelector('.card-content').insertBefore(notification, document.getElementById('activityList'));
+    
+    notification.querySelector('.delete').addEventListener('click', () => {
+      notification.remove();
+    });
+    
+    setTimeout(() => {
+      notification.remove();
+    }, 5000);
+  }
+
+  async function flagGroup() {
+    const groupId = document.getElementById('flagGroupId').value;
+    const reason = document.getElementById('flagReason').value;
+
+    await fetch(`/api/staff/groups/${groupId}/flag`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ reason })
+    });
+
+    alert('Group flagged successfully');
+  }
+
+  function toggleLoading(elementId, state) {
+    document.getElementById(elementId).classList.toggle('active', state);
+  }
+</script>
+
 </body>
 </html>
