@@ -22,16 +22,21 @@
             const navbarBurger = document.querySelector('.navbar-burger');
             const navbarMenu = document.querySelector('.navbar-menu');
             
-            navbarBurger.addEventListener('click', () => {
-                navbarBurger.classList.toggle('is-active');
-                navbarMenu.classList.toggle('is-active');
-            });
+            if (navbarBurger && navbarMenu) {
+                navbarBurger.addEventListener('click', () => {
+                    navbarBurger.classList.toggle('is-active');
+                    navbarMenu.classList.toggle('is-active');
+                });
+            }
             
             // Load data immediately
             loadAllData();
             
             // Set up refresh button
-            document.getElementById('refreshButton').addEventListener('click', loadAllData);
+            const refreshButton = document.getElementById('refreshButton');
+            if (refreshButton) {
+                refreshButton.addEventListener('click', loadAllData);
+            }
         });
         
         // Utility function to format bytes to human-readable format
@@ -71,26 +76,36 @@
                 ];
                 
                 // Fetch all data in parallel with Authorization header
-                const responses = await Promise.all(endpoints.map(endpoint => 
-                    fetch(endpoint, {
-                        headers: {
-                            'Authorization': `Bearer ${token}`
-                        }
-                    })
-                    .then(res => {
+                const responses = await Promise.all(endpoints.map(async (endpoint, index) => {
+                    try {
+                        const res = await fetch(endpoint, {
+                            headers: {
+                                'Authorization': `Bearer ${token}`
+                            }
+                        });
+                        
                         if (!res.ok) {
-                            throw new Error(`Error fetching ${endpoint}: ${res.status}`);
+                            const errorText = await res.text();
+                            console.error(`Error fetching ${endpoint}:`, {
+                                status: res.status,
+                                statusText: res.statusText,
+                                error: errorText
+                            });
+                            throw new Error(`Error fetching ${endpoint}: ${res.status} - ${errorText}`);
                         }
-                        return res.json();
-                    })
-                    .catch(err => {
-                        console.error(`Error fetching ${endpoint}:`, err);
+                        
+                        return await res.json();
+                    } catch (err) {
+                        console.error(`Failed to fetch ${endpoint}:`, err);
                         return null;
-                    })
-                ));
+                    }
+                }));
                 
                 // Update timestamp
-                document.getElementById('lastUpdated').textContent = new Date().toLocaleString();
+                const lastUpdatedElement = document.getElementById('lastUpdated');
+                if (lastUpdatedElement) {
+                    lastUpdatedElement.textContent = new Date().toLocaleString();
+                }
                 
                 // Process responses
                 const [
@@ -105,6 +120,12 @@
                     topUsersByFilesData,
                     recentUploadsData
                 ] = responses;
+                
+                // Log which endpoints failed
+                const failedEndpoints = endpoints.filter((_, index) => responses[index] === null);
+                if (failedEndpoints.length > 0) {
+                    console.warn('The following endpoints failed to load:', failedEndpoints);
+                }
                 
                 // Update UI with data
                 updateUIWithData({
@@ -121,8 +142,12 @@
                 });
                 
             } catch (error) {
-                console.error('Error loading data:', error);
-                alert('Failed to load dashboard data. Please try again later.');
+                console.error('Error loading dashboard data:', error);
+                console.error('Error details:', {
+                    message: error.message,
+                    stack: error.stack
+                });
+                alert('Failed to load dashboard data. Please check the console for more details.');
             }
         }
         
@@ -130,28 +155,47 @@
         function updateUIWithData(data) {
             // Basic stats
             if (data.totalUsersData) {
-                document.getElementById('totalUsers').textContent = data.totalUsersData.totalUsers.toLocaleString();
+                const element = document.getElementById('totalUsers');
+                if (element) {
+                    element.textContent = data.totalUsersData.totalUsers.toLocaleString();
+                }
             }
             
             if (data.totalFoldersData) {
-                document.getElementById('totalFolders').textContent = data.totalFoldersData.totalFolders.toLocaleString();
+                const element = document.getElementById('totalFolders');
+                if (element) {
+                    element.textContent = data.totalFoldersData.totalFolders.toLocaleString();
+                }
             }
             
             if (data.totalFilesData) {
-                document.getElementById('totalFiles').textContent = data.totalFilesData.totalFiles.toLocaleString();
+                const element = document.getElementById('totalFiles');
+                if (element) {
+                    element.textContent = data.totalFilesData.totalFiles.toLocaleString();
+                }
             }
             
             if (data.totalStorageData) {
                 const bytes = data.totalStorageData.totalStorage;
-                document.getElementById('totalStorage').textContent = formatBytes(bytes);
-                document.getElementById('storageSizeFormatted').textContent = formatBytes(bytes);
+                const totalStorageElement = document.getElementById('totalStorage');
+                const storageSizeFormattedElement = document.getElementById('storageSizeFormatted');
+                const avgFileSizeElement = document.getElementById('avgFileSize');
+                
+                if (totalStorageElement) {
+                    totalStorageElement.textContent = formatBytes(bytes);
+                }
+                if (storageSizeFormattedElement) {
+                    storageSizeFormattedElement.textContent = formatBytes(bytes);
+                }
                 
                 // Calculate average file size if we have both stats
-                if (data.totalFilesData && data.totalFilesData.totalFiles > 0) {
-                    const avgSize = bytes / data.totalFilesData.totalFiles;
-                    document.getElementById('avgFileSize').textContent = formatBytes(avgSize);
-                } else {
-                    document.getElementById('avgFileSize').textContent = 'N/A';
+                if (avgFileSizeElement) {
+                    if (data.totalFilesData && data.totalFilesData.totalFiles > 0) {
+                        const avgSize = bytes / data.totalFilesData.totalFiles;
+                        avgFileSizeElement.textContent = formatBytes(avgSize);
+                    } else {
+                        avgFileSizeElement.textContent = 'N/A';
+                    }
                 }
             }
             
@@ -160,91 +204,116 @@
                 const publicFolders = data.totalPublicFoldersData.totalPublicFolders;
                 const privateFolders = data.totalPrivateFoldersData.totalPrivateFolders;
                 
-                document.getElementById('totalPublicFolders').textContent = publicFolders.toLocaleString();
-                document.getElementById('totalPrivateFolders').textContent = privateFolders.toLocaleString();
+                const totalPublicFoldersElement = document.getElementById('totalPublicFolders');
+                const totalPrivateFoldersElement = document.getElementById('totalPrivateFolders');
+                const folderProgressBarElement = document.getElementById('folderProgressBar');
+                const folderDistributionTextElement = document.getElementById('folderDistributionText');
+                
+                if (totalPublicFoldersElement) {
+                    totalPublicFoldersElement.textContent = publicFolders.toLocaleString();
+                }
+                if (totalPrivateFoldersElement) {
+                    totalPrivateFoldersElement.textContent = privateFolders.toLocaleString();
+                }
                 
                 // Update progress bar
                 const total = publicFolders + privateFolders;
                 if (total > 0) {
                     const publicPercentage = (publicFolders / total) * 100;
-                    document.getElementById('folderProgressBar').value = publicPercentage;
-                    document.getElementById('folderDistributionText').textContent = 
-                        `${publicPercentage.toFixed(1)}% Public / ${(100 - publicPercentage).toFixed(1)}% Private`;
+                    if (folderProgressBarElement) {
+                        folderProgressBarElement.value = publicPercentage;
+                    }
+                    if (folderDistributionTextElement) {
+                        folderDistributionTextElement.textContent = 
+                            `${publicPercentage.toFixed(1)}% Public / ${(100 - publicPercentage).toFixed(1)}% Private`;
+                    }
                 } else {
-                    document.getElementById('folderProgressBar').value = 0;
-                    document.getElementById('folderDistributionText').textContent = 'No folders available';
+                    if (folderProgressBarElement) {
+                        folderProgressBarElement.value = 0;
+                    }
+                    if (folderDistributionTextElement) {
+                        folderDistributionTextElement.textContent = 'No folders available';
+                    }
                 }
             }
             
             // Average files per folder
             if (data.avgFilesPerFolderData) {
-                document.getElementById('averageFilesPerFolder').textContent = 
-                    data.avgFilesPerFolderData.averageFilesPerFolder.toFixed(1);
+                const element = document.getElementById('averageFilesPerFolder');
+                if (element) {
+                    element.textContent = data.avgFilesPerFolderData.averageFilesPerFolder.toFixed(1);
+                }
             }
             
             // Recent uploads
             if (data.recentUploadsData) {
-                document.getElementById('recentUploads').textContent = 
-                    data.recentUploadsData.recentUploads.toLocaleString();
+                const element = document.getElementById('recentUploads');
+                if (element) {
+                    element.textContent = data.recentUploadsData.recentUploads.toLocaleString();
+                }
             }
             
             // Top users by folders
             if (data.topUsersByFoldersData && data.topUsersByFoldersData.topUsersByFolders) {
-                const users = data.topUsersByFoldersData.topUsersByFolders;
                 const container = document.getElementById('topUsersByFolders');
-                container.innerHTML = '';
-                
-                if (users.length === 0) {
-                    container.innerHTML = '<p class="has-text-centered">No user data available</p>';
-                } else {
-                    users.forEach((user, index) => {
-                        const userItem = document.createElement('div');
-                        userItem.className = 'user-list-item';
-                        userItem.innerHTML = `
-                            <div>
-                                <span class="icon-text">
-                                    <span class="icon has-text-info">
-                                        <i class="fas fa-user-circle"></i>
+                if (container) {
+                    container.innerHTML = '';
+                    
+                    const users = data.topUsersByFoldersData.topUsersByFolders;
+                    if (users.length === 0) {
+                        container.innerHTML = '<p class="has-text-centered">No user data available</p>';
+                    } else {
+                        users.forEach((user, index) => {
+                            const userItem = document.createElement('div');
+                            userItem.className = 'user-list-item';
+                            userItem.innerHTML = `
+                                <div>
+                                    <span class="icon-text">
+                                        <span class="icon has-text-info">
+                                            <i class="fas fa-user-circle"></i>
+                                        </span>
+                                        <span class="has-text-weight-medium">${user.username}</span>
                                     </span>
-                                    <span class="has-text-weight-medium">${user.username}</span>
-                                </span>
-                            </div>
-                            <div>
-                                <span class="tag is-primary is-medium">${user.folderCount} folders</span>
-                            </div>
-                        `;
-                        container.appendChild(userItem);
-                    });
+                                </div>
+                                <div>
+                                    <span class="tag is-primary is-medium">${user.folderCount} folders</span>
+                                </div>
+                            `;
+                            container.appendChild(userItem);
+                        });
+                    }
                 }
             }
             
             // Top users by files
             if (data.topUsersByFilesData && data.topUsersByFilesData.topUsersByFiles) {
-                const users = data.topUsersByFilesData.topUsersByFiles;
                 const container = document.getElementById('topUsersByFiles');
-                container.innerHTML = '';
-                
-                if (users.length === 0) {
-                    container.innerHTML = '<p class="has-text-centered">No user data available</p>';
-                } else {
-                    users.forEach((user, index) => {
-                        const userItem = document.createElement('div');
-                        userItem.className = 'user-list-item';
-                        userItem.innerHTML = `
-                            <div>
-                                <span class="icon-text">
-                                    <span class="icon has-text-info">
-                                        <i class="fas fa-user-circle"></i>
+                if (container) {
+                    container.innerHTML = '';
+                    
+                    const users = data.topUsersByFilesData.topUsersByFiles;
+                    if (users.length === 0) {
+                        container.innerHTML = '<p class="has-text-centered">No user data available</p>';
+                    } else {
+                        users.forEach((user, index) => {
+                            const userItem = document.createElement('div');
+                            userItem.className = 'user-list-item';
+                            userItem.innerHTML = `
+                                <div>
+                                    <span class="icon-text">
+                                        <span class="icon has-text-info">
+                                            <i class="fas fa-user-circle"></i>
+                                        </span>
+                                        <span class="has-text-weight-medium">${user.username}</span>
                                     </span>
-                                    <span class="has-text-weight-medium">${user.username}</span>
-                                </span>
-                            </div>
-                            <div>
-                                <span class="tag is-success is-medium">${user.fileCount} files</span>
-                            </div>
-                        `;
-                        container.appendChild(userItem);
-                    });
+                                </div>
+                                <div>
+                                    <span class="tag is-success is-medium">${user.fileCount} files</span>
+                                </div>
+                            `;
+                            container.appendChild(userItem);
+                        });
+                    }
                 }
             }
         }

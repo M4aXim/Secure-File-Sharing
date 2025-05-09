@@ -4,414 +4,119 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Staff - Group Monitoring</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        .group-card {
-            transition: transform 0.2s;
-            margin-bottom: 1rem;
-        }
-        .group-card:hover {
-            transform: translateY(-2px);
-        }
-        .stats-card {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        }
-        .loading {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(255, 255, 255, 0.9);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        .flagged {
-            border-left: 4px solid #ff3860;
-        }
-    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <nav class="navbar is-primary" role="navigation" aria-label="main navigation">
-        <div class="navbar-brand">
-            <a class="navbar-item" href="/staff/dashboard.html">
-                <i class="fas fa-shield-alt mr-2"></i>
-                Staff Dashboard
+<body class="bg-gray-100 text-gray-800 font-sans min-h-screen">
+
+    <!-- Sidebar Navigation -->
+    <div class="fixed top-0 left-0 w-64 h-screen bg-white shadow-md flex flex-col p-4 z-40">
+        <div class="flex items-center mb-4 text-lg font-bold text-blue-700">
+            <i class="fas fa-shield-alt mr-2 text-white bg-blue-500 p-2 rounded"></i>
+            Staff Portal
+        </div>
+        <nav class="flex-1 overflow-y-auto space-y-2">
+            <a href="/staff/dashboard.html" class="flex items-center px-3 py-2 rounded hover:bg-blue-100 text-gray-600">
+                <i class="fas fa-tachometer-alt mr-2"></i> Dashboard
             </a>
+            <a href="/staff/groups.html" class="flex items-center px-3 py-2 rounded bg-blue-500 text-white">
+                <i class="fas fa-user-friends mr-2"></i> Groups
+            </a>
+            <a href="/staff/audit-log.html" class="flex items-center px-3 py-2 rounded hover:bg-blue-100 text-gray-600">
+                <i class="fas fa-history mr-2"></i> Audit Log
+            </a>
+            <a href="#" class="flex items-center px-3 py-2 rounded hover:bg-blue-100 text-gray-600">
+                <i class="fas fa-flag mr-2"></i> Reports
+            </a>
+            <a href="#" class="flex items-center px-3 py-2 rounded hover:bg-blue-100 text-gray-600">
+                <i class="fas fa-cog mr-2"></i> Settings
+            </a>
+        </nav>
+        <div class="mt-4 text-xs text-gray-500">
+            <i class="fas fa-user-shield mr-1"></i> Logged in as Admin
         </div>
-        <div class="navbar-menu">
-            <div class="navbar-start">
-                <a class="navbar-item" href="/staff/users.html">
-                    <i class="fas fa-users mr-2"></i>
-                    Users
-                </a>
-                <a class="navbar-item is-active" href="/staff/groups.html">
-                    <i class="fas fa-user-friends mr-2"></i>
-                    Groups
-                </a>
-                <a class="navbar-item" href="/staff/audit.html">
-                    <i class="fas fa-history mr-2"></i>
-                    Audit Log
-                </a>
-            </div>
-        </div>
-    </nav>
+    </div>
 
-    <section class="section">
-        <div class="container">
-            <h1 class="title">
-                <i class="fas fa-user-friends mr-2"></i>
-                Group Monitoring
-            </h1>
+    <!-- Main Content -->
+    <div class="ml-64 p-6 space-y-6">
+        <h1 class="text-2xl font-bold mb-4">Group Monitoring</h1>
 
-            <!-- Stats Overview -->
-            <div class="columns is-multiline mb-6">
-                <div class="column is-3">
-                    <div class="stats-card">
-                        <h3 class="subtitle is-6">Total Groups</h3>
-                        <p class="title is-4" id="totalGroups">-</p>
-                    </div>
-                </div>
-                <div class="column is-3">
-                    <div class="stats-card">
-                        <h3 class="subtitle is-6">Total Members</h3>
-                        <p class="title is-4" id="totalMembers">-</p>
-                    </div>
-                </div>
-                <div class="column is-3">
-                    <div class="stats-card">
-                        <h3 class="subtitle is-6">Flagged Groups</h3>
-                        <p class="title is-4" id="flaggedGroups">-</p>
-                    </div>
-                </div>
-                <div class="column is-3">
-                    <div class="stats-card">
-                        <h3 class="subtitle is-6">Pending Invites</h3>
-                        <p class="title is-4" id="pendingInvites">-</p>
-                    </div>
+        <!-- Stats Overview -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white rounded-lg shadow p-4 flex items-center space-x-4 transition hover:shadow-lg">
+                <div class="text-blue-500 text-2xl"><i class="fas fa-user-friends"></i></div>
+                <div>
+                    <h3 class="font-semibold">Total Groups</h3>
+                    <p id="totalGroups" class="text-gray-600">-</p>
                 </div>
             </div>
-
-            <!-- Groups List -->
-            <div class="box">
-                <h2 class="title is-4 mb-4">All Groups</h2>
-                <div id="groupsList">
-                    <!-- Groups will be loaded here -->
+            <div class="bg-white rounded-lg shadow p-4 flex items-center space-x-4 transition hover:shadow-lg">
+                <div class="text-green-500 text-2xl"><i class="fas fa-users"></i></div>
+                <div>
+                    <h3 class="font-semibold">Total Members</h3>
+                    <p id="totalMembers" class="text-gray-600">-</p>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 flex items-center space-x-4 transition hover:shadow-lg">
+                <div class="text-red-500 text-2xl"><i class="fas fa-flag"></i></div>
+                <div>
+                    <h3 class="font-semibold">Flagged Groups</h3>
+                    <p id="flaggedGroups" class="text-gray-600">-</p>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-4 flex items-center space-x-4 transition hover:shadow-lg">
+                <div class="text-orange-500 text-2xl"><i class="fas fa-envelope"></i></div>
+                <div>
+                    <h3 class="font-semibold">Pending Invites</h3>
+                    <p id="pendingInvites" class="text-gray-600">-</p>
                 </div>
             </div>
         </div>
-    </section>
+
+        <!-- Groups List -->
+        <div class="bg-white rounded-lg shadow-md">
+            <div class="flex justify-between items-center p-4 border-b border-gray-200">
+                <h2 class="text-xl font-semibold">All Groups</h2>
+                <div class="relative">
+                    <input type="text" placeholder="Search groups..." id="groupSearch" class="px-4 py-2 border rounded-md focus:outline-none focus:ring focus:ring-blue-200">
+                </div>
+            </div>
+            <div id="groupsList" class="p-4 space-y-4">
+                <!-- Groups will be loaded here by JavaScript -->
+            </div>
+        </div>
+    </div>
 
     <!-- Group Details Modal -->
-    <div class="modal" id="groupModal">
-        <div class="modal-background"></div>
-        <div class="modal-card">
-            <header class="modal-card-head">
-                <p class="modal-card-title" id="modalGroupName">Group Details</p>
-                <button class="delete" aria-label="close"></button>
+    <div id="groupModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-lg max-w-lg w-full p-6 space-y-4">
+            <header class="flex justify-between items-center">
+                <h3 id="modalGroupName" class="text-xl font-semibold">Group Details</h3>
+                <button class="text-gray-500 hover:text-red-500" id="closeModalBtn">&times;</button>
             </header>
-            <section class="modal-card-body">
-                <div class="tabs">
-                    <ul>
-                        <li class="is-active"><a data-tab="members">Members</a></li>
-                        <li><a data-tab="activity">Activity</a></li>
-                    </ul>
-                </div>
-
-                <div id="membersTab" class="tab-content">
-                    <div id="membersList" class="mt-4">
+            <section>
+                <div class="space-y-4">
+                    <div id="membersList">
                         <!-- Members will be loaded here -->
                     </div>
-                </div>
-
-                <div id="activityTab" class="tab-content" style="display: none;">
-                    <div id="activityList" class="mt-4">
+                    <div id="activityList" class="hidden">
                         <!-- Activity will be loaded here -->
                     </div>
                 </div>
             </section>
-            <footer class="modal-card-foot">
-                <button class="button is-danger" id="flagGroupBtn">
-                    <span class="icon">
-                        <i class="fas fa-flag"></i>
-                    </span>
-                    <span>Flag Group</span>
+            <footer class="flex justify-end space-x-2">
+                <button class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600" id="flagGroupBtn">
+                    <i class="fas fa-flag mr-2"></i> Flag Group
                 </button>
-                <button class="button" id="closeModalBtn">Close</button>
+                <button class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600" id="closeModalBtn">Close</button>
             </footer>
         </div>
     </div>
-
-    <!-- Loading Spinner -->
-    <div class="loading" style="display: none;">
-        <div class="box">
-            <span class="icon is-large has-text-primary">
-                <i class="fas fa-spinner fa-pulse fa-2x"></i>
-            </span>
-        </div>
-    </div>
-
+    <script src="/javascript/staff/groups.js"></script>
     <script>
-        let currentGroupId = null;
-        const token = localStorage.getItem('jwtToken');
-        if (!token) {
-            window.location.href = '/index.html';
-        }
-
-        // Load initial data
-        loadStats();
-        loadGroups();
-
-        async function loadStats() {
-            try {
-                const res = await fetch('/api/staff/groups/stats', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const stats = await res.json();
-                
-                document.getElementById('totalGroups').textContent = stats.totalGroups;
-                document.getElementById('totalMembers').textContent = stats.totalMembers;
-                document.getElementById('flaggedGroups').textContent = stats.flaggedGroups;
-                document.getElementById('pendingInvites').textContent = stats.totalPendingInvites;
-            } catch (err) {
-                console.error('Failed to load stats:', err);
-            }
-        }
-
-        async function loadGroups() {
-            showLoading();
-            try {
-                const res = await fetch('/api/staff/groups', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await res.json();
-                
-                const groupsList = document.getElementById('groupsList');
-                if (data.groups.length === 0) {
-                    groupsList.innerHTML = `
-                        <div class="notification is-info">
-                            <p>No groups found in the system.</p>
-                        </div>
-                    `;
-                    return;
-                }
-
-                groupsList.innerHTML = data.groups.map(group => `
-                    <div class="card group-card ${group.flagged ? 'flagged' : ''}">
-                        <div class="card-content">
-                            <div class="level">
-                                <div class="level-left">
-                                    <div class="level-item">
-                                        <div>
-                                            <p class="title is-4">${group.groupName}</p>
-                                            <p class="subtitle is-6">Owner: ${group.owner}</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="level-right">
-                                    <div class="level-item">
-                                        <div class="tags">
-                                            <span class="tag is-info">${group.memberCount} members</span>
-                                            <span class="tag is-warning">${group.pendingInviteCount} pending</span>
-                                            <span class="tag is-primary">${group.folderCount} folders</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="content">
-                                <button class="button is-primary is-fullwidth" 
-                                        onclick="openGroupDetails('${group.groupId}', '${group.groupName}')">
-                                    <span class="icon">
-                                        <i class="fas fa-cog"></i>
-                                    </span>
-                                    <span>Manage Group</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-            } catch (err) {
-                console.error('Failed to load groups:', err);
-                document.getElementById('groupsList').innerHTML = `
-                    <div class="notification is-danger">
-                        <p>Failed to load groups. Please try again later.</p>
-                    </div>
-                `;
-            } finally {
-                hideLoading();
-            }
-        }
-
-        async function openGroupDetails(groupId, groupName) {
-            currentGroupId = groupId;
-            document.getElementById('modalGroupName').textContent = groupName;
-            showLoading();
-
-            try {
-                // Load members
-                const membersRes = await fetch(`/api/groups/members/${groupId}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const membersData = await membersRes.json();
-                
-                document.getElementById('membersList').innerHTML = membersData.members.map(member => `
-                    <div class="box">
-                        <div class="level">
-                            <div class="level-left">
-                                <div class="level-item">
-                                    <span class="icon mr-2 has-text-info">
-                                        <i class="fas fa-user-circle"></i>
-                                    </span>
-                                    <span>${member.username}</span>
-                                </div>
-                            </div>
-                            <div class="level-right">
-                                <div class="level-item">
-                                    <button class="button is-danger is-small" 
-                                            onclick="removeMember('${groupId}', '${member.username}')">
-                                        <span class="icon">
-                                            <i class="fas fa-user-minus"></i>
-                                        </span>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-
-                // Load activity
-                const activityRes = await fetch(`/api/staff/groups/${groupId}/activity`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const activityData = await activityRes.json();
-                
-                document.getElementById('activityList').innerHTML = activityData.activities.map(activity => `
-                    <div class="box">
-                        <div class="level">
-                            <div class="level-left">
-                                <div class="level-item">
-                                    <span class="icon mr-2 has-text-info">
-                                        <i class="fas fa-history"></i>
-                                    </span>
-                                    <span>${activity.activity}</span>
-                                </div>
-                            </div>
-                            <div class="level-right">
-                                <div class="level-item">
-                                    <span class="tag is-light">
-                                        ${new Date(activity.timestamp).toLocaleString()}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `).join('');
-
-                // Show modal
-                document.getElementById('groupModal').classList.add('is-active');
-            } catch (err) {
-                console.error('Error loading group details:', err);
-            } finally {
-                hideLoading();
-            }
-        }
-
-        async function removeMember(groupId, username) {
-            if (!confirm(`Are you sure you want to remove ${username} from this group?`)) {
-                return;
-            }
-
-            showLoading();
-            try {
-                const res = await fetch(`/api/staff/groups/${groupId}/members/${username}`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-
-                if (!res.ok) {
-                    throw new Error(await res.text());
-                }
-
-                // Refresh the view
-                openGroupDetails(groupId, document.getElementById('modalGroupName').textContent);
-                loadGroups(); // Refresh the main list
-            } catch (err) {
-                console.error('Failed to remove member:', err);
-                alert('Failed to remove member: ' + err.message);
-            } finally {
-                hideLoading();
-            }
-        }
-
-        async function flagGroup() {
-            const reason = prompt('Please enter the reason for flagging this group:');
-            if (!reason) return;
-
-            showLoading();
-            try {
-                const res = await fetch(`/api/staff/groups/${currentGroupId}/flag`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({ reason })
-                });
-
-                if (!res.ok) {
-                    throw new Error(await res.text());
-                }
-
-                alert('Group flagged successfully');
-                loadGroups(); // Refresh the list
-            } catch (err) {
-                console.error('Failed to flag group:', err);
-                alert('Failed to flag group: ' + err.message);
-            } finally {
-                hideLoading();
-            }
-        }
-
-        // Modal handling
-        document.querySelector('.modal .delete').onclick = () => {
-            document.getElementById('groupModal').classList.remove('is-active');
-        };
-
-        document.getElementById('closeModalBtn').onclick = () => {
-            document.getElementById('groupModal').classList.remove('is-active');
-        };
-
-        // Tab switching
-        document.querySelectorAll('.tabs a').forEach(tab => {
-            tab.onclick = (e) => {
-                e.preventDefault();
-                const target = e.target.getAttribute('data-tab');
-                
-                // Update active tab
-                document.querySelectorAll('.tabs li').forEach(li => li.classList.remove('is-active'));
-                e.target.parentElement.classList.add('is-active');
-                
-                // Show target content
-                document.querySelectorAll('.tab-content').forEach(content => {
-                    content.style.display = 'none';
-                });
-                document.getElementById(target + 'Tab').style.display = 'block';
-            };
+        // JavaScript to toggle modal
+        document.getElementById('closeModalBtn').addEventListener('click', () => {
+            document.getElementById('groupModal').classList.add('hidden');
         });
-
-        function showLoading() {
-            document.querySelector('.loading').style.display = 'flex';
-        }
-
-        function hideLoading() {
-            document.querySelector('.loading').style.display = 'none';
-        }
     </script>
 </body>
-</html> 
+</html>
