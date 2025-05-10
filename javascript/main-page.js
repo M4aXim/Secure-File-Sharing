@@ -172,3 +172,62 @@ function forgotPassword() {
         notification.remove();
       }, 4000);
     }
+
+// Google login functionality
+document.addEventListener('DOMContentLoaded', function() {
+  const googleLoginBtn = document.getElementById('googleLoginBtn');
+  if (googleLoginBtn) {
+    googleLoginBtn.addEventListener('click', function() {
+      // Direct navigation to Google OAuth endpoint
+      window.location.href = '/api/auth/google';
+    });
+  }
+  
+  // Check if we're on the login success page with a token
+  const urlParams = new URLSearchParams(window.location.search);
+  const token = urlParams.get('token');
+  
+  if (token) {
+    // Store the token in localStorage
+    localStorage.setItem('jwtToken', token);
+    showNotification('Google login successful! Redirecting...', 'is-success');
+    
+    // Get user info from token
+    fetch('/api/verify-token', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.message === 'Token is valid') {
+        // Try to decode the JWT to get user info (basic decoding, not verification)
+        try {
+          const base64Url = token.split('.')[1];
+          const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+          const payload = JSON.parse(window.atob(base64));
+          
+          // Store user info
+          localStorage.setItem('username', payload.username);
+          localStorage.setItem('userRole', payload.role);
+          
+          console.log('Logged in as:', payload.username, 'with role:', payload.role);
+        } catch (e) {
+          console.error('Error decoding token:', e);
+        }
+        
+        // Redirect to dashboard
+        setTimeout(() => {
+          window.location.href = '/dashboard/dashboard.html';
+        }, 1500);
+      } else {
+        showNotification('Invalid token. Please try again.', 'is-danger');
+      }
+    })
+    .catch(error => {
+      showNotification('Error verifying token. Please try again.', 'is-danger');
+      console.error('Token verification error:', error);
+    });
+  }
+});
