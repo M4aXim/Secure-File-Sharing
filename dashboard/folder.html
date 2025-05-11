@@ -984,6 +984,51 @@
     .notification.warning {
       border-left-color: #ffdd57;
     }
+
+    /* Modal Styles */
+    .modal-card {
+      max-width: 550px;
+      width: 100%;
+      margin: 0 auto;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .modal-card-head, 
+    .modal-card-foot {
+      background-color: #f8f9fa;
+      padding: 1rem 1.5rem;
+    }
+
+    .modal-card-head {
+      border-bottom: 1px solid #e9ecef;
+    }
+
+    .modal-card-foot {
+      border-top: 1px solid #e9ecef;
+      justify-content: flex-end;
+    }
+
+    .modal-card-body {
+      padding: 1.5rem;
+    }
+
+    /* Temporary Link Modal Styles */
+    #tempLinkModal .field {
+      margin-bottom: 1.5rem;
+    }
+
+    #tempLinkResult {
+      background-color: #f8f9fa;
+      padding: 1rem;
+      border-radius: 6px;
+      border: 1px solid #e9ecef;
+    }
+
+    #tempLinkUrl {
+      font-family: monospace;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 
@@ -1129,6 +1174,50 @@
   <div class="notification is-success" id="notificationSuccess">
     <button class="delete" id="closeNotification"></button>
     <span id="notificationText"></span>
+  </div>
+
+  <!-- Temporary Link Modal -->
+  <div class="modal" id="tempLinkModal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">Generate Temporary Download Link</p>
+        <button class="delete" aria-label="close" id="closeTempLinkModal"></button>
+      </header>
+      <section class="modal-card-body">
+        <div class="content">
+          <p>Create a temporary download link for <strong id="tempLinkFilename"></strong></p>
+          <div class="field">
+            <label class="label">Link Duration (hours)</label>
+            <div class="control">
+              <input class="input" type="number" id="tempLinkDuration" value="24" min="1" max="168">
+            </div>
+            <p class="help">Maximum 24h (1 day)</p>
+          </div>
+          <div id="tempLinkResult" class="is-hidden mt-4">
+            <label class="label">Temporary Link</label>
+            <div class="field has-addons">
+              <div class="control is-expanded">
+                <input class="input" type="text" id="tempLinkUrl" readonly>
+              </div>
+              <div class="control">
+                <button class="button is-info" id="copyTempLink">
+                  <span class="icon">
+                    <i class="fas fa-copy"></i>
+                  </span>
+                  <span>Copy</span>
+                </button>
+              </div>
+            </div>
+            <p class="help">This link will expire after the specified duration</p>
+          </div>
+        </div>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-primary" id="generateTempLinkButton">Generate Link</button>
+        <button class="button" id="closeTempLinkModalFooter">Close</button>
+      </footer>
+    </div>
   </div>
 
   <footer>

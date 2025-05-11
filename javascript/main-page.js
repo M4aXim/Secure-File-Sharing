@@ -25,6 +25,7 @@ function forgotPassword() {
     function showForm(formId) {
       document.getElementById('login-form').classList.add('hidden');
       document.getElementById('register-form').classList.add('hidden');
+      document.getElementById('otp-login-form').classList.add('hidden');
       document.getElementById(formId + '-form').classList.remove('hidden');
       
       document.getElementById(formId + '-form').scrollIntoView({ behavior: 'smooth' });
@@ -231,3 +232,116 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 });
+
+// Function to request a one-time password
+function requestOTP() {
+  const email = document.getElementById('otp-email').value;
+  
+  if (!email) {
+    showNotification('Please enter your email address', 'is-danger');
+    return;
+  }
+  
+  // Disable button and show loading state
+  const button = document.getElementById('request-otp-button');
+  const originalText = button.innerHTML;
+  button.disabled = true;
+  button.innerHTML = '<span class="icon"><i class="fas fa-spinner fa-spin"></i></span><span>Sending...</span>';
+  
+  fetch('/api/request-otp', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ email })
+  })
+  .then(response => response.json())
+  .then(data => {
+    button.disabled = false;
+    button.innerHTML = originalText;
+    
+    if (data.message) {
+      showNotification('If your email is registered, a one-time password has been sent', 'is-success');
+      
+      // Show the OTP entry section
+      document.getElementById('request-otp-section').classList.add('is-hidden');
+      document.getElementById('enter-otp-section').classList.remove('is-hidden');
+      
+      // Set the email in the confirmation field
+      document.getElementById('confirm-otp-email').value = email;
+      
+      // Focus on the OTP input field
+      document.getElementById('otp-code').focus();
+    } else {
+      showNotification(data.error || 'Failed to send OTP', 'is-danger');
+    }
+  })
+  .catch(error => {
+    button.disabled = false;
+    button.innerHTML = originalText;
+    showNotification('Connection error. Please try again later.', 'is-danger');
+    console.error('Error:', error);
+  });
+}
+
+// Function to login with a one-time password
+function loginWithOTP() {
+  const email = document.getElementById('confirm-otp-email').value;
+  const otp = document.getElementById('otp-code').value;
+  
+  if (!email || !otp) {
+    showNotification('Please enter the one-time password', 'is-danger');
+    return;
+  }
+  
+  if (otp.length !== 6 || isNaN(otp)) {
+    showNotification('Please enter a valid 6-digit code', 'is-danger');
+    return;
+  }
+  
+  fetch('/api/login-with-otp', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ email, otp })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.token) {
+      // Store the token in localStorage
+      localStorage.setItem('jwtToken', data.token);
+      
+      // Also store user info if available
+      if (data.user) {
+        localStorage.setItem('username', data.user.username);
+        localStorage.setItem('userRole', data.user.role);
+      }
+      
+      showNotification('Login successful! Redirecting...', 'is-success');
+      
+      setTimeout(() => {
+        window.location.href = '/dashboard/dashboard.html';
+      }, 1500);
+    } else {
+      showNotification(data.error || 'Invalid one-time password', 'is-danger');
+    }
+  })
+  .catch(error => {
+    showNotification('Connection error. Please try again later.', 'is-danger');
+    console.error('Error:', error);
+  });
+}
+
+// Function to reset the OTP form to the email input stage
+function resetOTPForm() {
+  // Show the request section and hide the enter section
+  document.getElementById('request-otp-section').classList.remove('is-hidden');
+  document.getElementById('enter-otp-section').classList.add('is-hidden');
+  
+  // Clear the OTP input
+  document.getElementById('otp-code').value = '';
+  
+  // Focus on the email input
+  document.getElementById('otp-email').focus();
+}

@@ -197,10 +197,86 @@
             </div>
           </div>
           
+          <div class="has-text-centered mt-3">
+            <button class="button is-text is-small" type="button" onclick="showForm('otp-login')">
+              <span class="icon"><i class="fas fa-key"></i></span>
+              <span>Login with One-Time Password</span>
+            </button>
+          </div>
+          
           <p class="form-note mt-4">
             Don't have an account? <a href="#" onclick="showForm('register')">Register here</a>
           </p>
         </form>
+      </div>
+
+      <div id="otp-login-form" class="form-card p-5 hidden">
+        <h2 class="title is-4 has-text-centered">Login with One-Time Password</h2>
+        <p class="subtitle is-6 has-text-centered has-text-grey mb-5">Enter your email to receive a code</p>
+        
+        <div id="request-otp-section">
+          <div class="field">
+            <label class="label">Email</label>
+            <div class="control has-icons-left">
+              <input id="otp-email" class="input" type="email" placeholder="Enter your email" required>
+              <span class="icon is-small is-left field-icon">
+                <i class="fas fa-envelope"></i>
+              </span>
+            </div>
+          </div>
+
+          <div class="field mt-4">
+            <div class="control">
+              <button id="request-otp-button" class="button is-info is-fullwidth" type="button" onclick="requestOTP()">
+                <span class="icon"><i class="fas fa-paper-plane"></i></span>
+                <span>Send One-Time Password</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <div id="enter-otp-section" class="is-hidden">
+          <div class="field">
+            <label class="label">Email</label>
+            <div class="control has-icons-left">
+              <input id="confirm-otp-email" class="input" type="email" readonly>
+              <span class="icon is-small is-left field-icon">
+                <i class="fas fa-envelope"></i>
+              </span>
+            </div>
+          </div>
+          
+          <div class="field">
+            <label class="label">One-Time Password</label>
+            <div class="control has-icons-left">
+              <input id="otp-code" class="input" type="text" placeholder="Enter the 6-digit code" maxlength="6" required>
+              <span class="icon is-small is-left field-icon">
+                <i class="fas fa-key"></i>
+              </span>
+            </div>
+            <p class="help">Enter the 6-digit code sent to your email</p>
+          </div>
+
+          <div class="field mt-4">
+            <div class="control">
+              <button class="button is-primary is-fullwidth" type="button" onclick="loginWithOTP()">
+                <span class="icon"><i class="fas fa-sign-in-alt"></i></span>
+                <span>Login</span>
+              </button>
+            </div>
+          </div>
+          
+          <p class="has-text-centered mt-3">
+            <a href="#" onclick="resetOTPForm()">
+              <span class="icon is-small"><i class="fas fa-arrow-left"></i></span>
+              <span>Use a different email</span>
+            </a>
+          </p>
+        </div>
+        
+        <p class="form-note mt-4">
+          <a href="#" onclick="showForm('login')">Back to normal login</a>
+        </p>
       </div>
 
       <div id="register-form" class="form-card p-5 hidden">

@@ -327,6 +327,138 @@ fastify.post('/api/login', async (req, reply) => {
   }
 });
 
+fastify.post('/api/request-otp', async (req, reply) => {
+  const { email } = req.body;
+  
+  if (!email) {
+    return reply.badRequest('Email is required');
+  }
+  
+  try {
+    // Find user by email
+    const user = await usersColl.findOne({ email });
+    if (!user) {
+      // For security reasons, don't reveal if email exists or not
+      return reply.send({ message: 'If your email is registered, a one-time password has been sent' });
+    }
+    
+    // Generate a secure random OTP (6 digits)
+    const otp = crypto.randomInt(100000, 999999).toString();
+    
+    // Hash the OTP for storage
+    const hashedOtp = await bcrypt.hash(otp, 5); // Lower rounds for faster processing
+    
+    // Store the OTP with expiration (10 minutes)
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+    
+    await usersColl.updateOne(
+      { email },
+      { 
+        $set: { 
+          'otpLogin': {
+            hashedOtp,
+            expiresAt,
+            attemptCount: 0
+          }
+        } 
+      }
+    );
+    
+    // Send the OTP via email
+    await transporter.sendMail({
+      from: `"FileShare Security" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Your One-Time Password for FileShare',
+      text: `Hello ${user.username},
+
+You have requested a one-time password to log in to your FileShare account.
+
+Your one-time password is: ${otp}
+
+This password will expire in 10 minutes and can only be used once.
+
+If you did not request this login code, please ignore this email or contact support immediately.
+
+Thank you,
+FileShare Security Team`
+    });
+    
+    await logActivity(req, 'otp-requested', { username: user.username, email });
+    
+    return reply.send({ message: 'If your email is registered, a one-time password has been sent' });
+  } catch (err) {
+    fastify.log.error('Error generating OTP:', err);
+    return reply.internalServerError('Error processing request');
+  }
+});
+
+// Endpoint to validate and login with OTP
+fastify.post('/api/login-with-otp', async (req, reply) => {
+  const { email, otp } = req.body;
+  
+  if (!email || !otp) {
+    return reply.badRequest('Email and OTP are required');
+  }
+  
+  try {
+    // Find user by email
+    const user = await usersColl.findOne({ email });
+    if (!user || !user.otpLogin || !user.otpLogin.hashedOtp) {
+      return reply.unauthorized('Invalid credentials');
+    }
+    
+    // Check if OTP is expired
+    if (new Date() > new Date(user.otpLogin.expiresAt)) {
+      // Clear expired OTP
+      await usersColl.updateOne({ email }, { $unset: { otpLogin: "" } });
+      return reply.unauthorized('OTP has expired');
+    }
+    
+    // Check attempt count to prevent brute force
+    if (user.otpLogin.attemptCount >= 5) {
+      // Clear OTP after too many attempts
+      await usersColl.updateOne({ email }, { $unset: { otpLogin: "" } });
+      return reply.unauthorized('Too many failed attempts');
+    }
+    
+    // Verify OTP
+    const isValid = await bcrypt.compare(otp, user.otpLogin.hashedOtp);
+    
+    if (!isValid) {
+      // Increment attempt count
+      await usersColl.updateOne(
+        { email }, 
+        { $inc: { 'otpLogin.attemptCount': 1 } }
+      );
+      return reply.unauthorized('Invalid OTP');
+    }
+    
+    // OTP is valid - clear it to prevent reuse
+    await usersColl.updateOne({ email }, { $unset: { otpLogin: "" } });
+    
+    // Generate JWT token - same as normal login but bypassing password/MFA
+    const token = fastify.jwt.sign({ username: user.username, role: user.role });
+    
+    await logActivity(req, 'login-with-otp');
+    
+    return reply.send({
+      message: 'Login successful',
+      token,
+      user: {
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        mfaEnabled: user.mfa?.enabled || false
+      }
+    });
+  } catch (err) {
+    fastify.log.error('Error logging in with OTP:', err);
+    return reply.internalServerError('Error processing login');
+  }
+});
+
+
 
 // GET /api/verify-token
 fastify.get('/api/verify-token', { preHandler: [fastify.authenticate] }, async () => {

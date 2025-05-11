@@ -1,5 +1,7 @@
 // Global variables
 let isGridView = localStorage.getItem('gridView') === 'true';
+let isOwner = false;
+let currentTempLinkFilename = '';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const token       = localStorage.getItem('jwtToken');
@@ -9,18 +11,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.location.href = '/dashboard.html';
     return;
   }
-  folderIdSpan.textContent = folderId;
+  
+  // Get DOM references
+  const folderIdSpan = document.getElementById('folderId');
+  if (folderIdSpan) {
+    folderIdSpan.textContent = folderId;
+  } else {
+    console.error('Element with ID "folderId" not found in the document');
+  }
 
   // Initialize view mode
   updateViewMode();
 
   // Add view toggle handler
-  document.getElementById('toggleViewButton').addEventListener('click', () => {
-    isGridView = !isGridView;
-    localStorage.setItem('gridView', isGridView);
-    updateViewMode();
-    fetchFolderContents();
-  });
+  const toggleViewButton = document.getElementById('toggleViewButton');
+  if (toggleViewButton) {
+    toggleViewButton.addEventListener('click', () => {
+      isGridView = !isGridView;
+      localStorage.setItem('gridView', isGridView);
+      updateViewMode();
+      fetchFolderContents();
+    });
+  }
 
   // 1) Check if the folder is public
   let isPublic = false;
@@ -78,6 +90,15 @@ const notificationText       = document.getElementById('notificationText');
 const closeNotification      = document.getElementById('closeNotification');
 const changePermissionButton = document.getElementById('changePermissionButton');
 const makePublicButton       = document.getElementById('makePublicButton');
+const tempLinkModal          = document.getElementById('tempLinkModal');
+const tempLinkFilename       = document.getElementById('tempLinkFilename');
+const tempLinkDuration       = document.getElementById('tempLinkDuration');
+const tempLinkResult         = document.getElementById('tempLinkResult');
+const tempLinkUrl            = document.getElementById('tempLinkUrl');
+const generateTempLinkButton = document.getElementById('generateTempLinkButton');
+const copyTempLinkButton     = document.getElementById('copyTempLink');
+const closeTempLinkModal     = document.getElementById('closeTempLinkModal');
+const closeTempLinkModalFooter = document.getElementById('closeTempLinkModalFooter');
 
 // Helpers
 function formatFileSize(bytes) {
@@ -103,29 +124,49 @@ function getFileIcon(ext) {
   return icons[ext.toLowerCase()] || 'fa-file';
 }
 function showNotification(msg, type = 'is-success') {
+  if (!notification || !notificationText) {
+    console.error('Notification elements not found');
+    return;
+  }
+  
   notification.className = `notification ${type}`;
   notificationText.textContent = msg;
   notification.classList.add('show');
   setTimeout(() => notification.classList.remove('show'), 5000);
 }
-closeNotification.addEventListener('click', () => {
-  notification.classList.remove('show');
-});
+
+if (closeNotification) {
+  closeNotification.addEventListener('click', () => {
+    if (notification) notification.classList.remove('show');
+  });
+}
 
 // Add this new function
 function updateViewMode() {
   const toggleButton = document.getElementById('toggleViewButton');
+  const folderContentsElement = document.getElementById('folderContents');
+  
+  if (!toggleButton || !folderContentsElement) {
+    console.error('Toggle button or folder contents element not found');
+    return;
+  }
+  
   const icon = toggleButton.querySelector('.icon i');
   const text = toggleButton.querySelector('span:not(.icon)');
+  
+  if (!icon || !text) {
+    console.error('Icon or text element not found in toggle button');
+    return;
+  }
   
   if (isGridView) {
     icon.className = 'fas fa-list';
     text.textContent = 'List View';
-    folderContentsDiv.className = 'grid-view';
+    folderContentsElement.className = 'grid-view';
   } else {
     icon.className = 'fas fa-th-large';
     text.textContent = 'Grid View';
-    folderContentsDiv.className = 'list-view';
+    folderContentsElement.className = 'list-view';
   }
 }
 
@@ -142,28 +183,38 @@ async function getThumbnailUrl(folderId, filename) {
 // Fetch & render folder contents
 async function fetchFolderContents() {
   const token = localStorage.getItem('jwtToken');
-  const folderId = folderIdSpan.textContent;
+  
+  // Get folder ID from URL params instead of relying on DOM element
+  const urlParams = new URLSearchParams(window.location.search);
+  const folderId = urlParams.get('folderID');
+  
+  if (!folderId) {
+    console.error('No folder ID found in URL');
+    return;
+  }
 
-  loadingSpinner.style.display = 'block';
-  folderContentsDiv.innerHTML = '';
+  if (loadingSpinner) loadingSpinner.style.display = 'block';
+  if (folderContentsDiv) folderContentsDiv.innerHTML = '';
 
   try {
     const res = await fetch(`/api/folder-contents?folderID=${encodeURIComponent(folderId)}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const contents = await res.json();
-    loadingSpinner.style.display = 'none';
+    if (loadingSpinner) loadingSpinner.style.display = 'none';
 
     if (!res.ok) {
-      return folderContentsDiv.innerHTML = `<div class="notification is-warning">${contents.message||'Error loading'}</div>`;
+      if (folderContentsDiv) folderContentsDiv.innerHTML = `<div class="notification is-warning">${contents.message||'Error loading'}</div>`;
+      return;
     }
     if (contents.length === 0) {
-      return folderContentsDiv.innerHTML = `
+      if (folderContentsDiv) folderContentsDiv.innerHTML = `
         <div class="empty-folder">
           <i class="fas fa-folder-open fa-3x mb-3" style="color:#ddd"></i>
           <p>This folder is empty</p>
           <p class="is-size-7 has-text-grey">Upload files to get started</p>
         </div>`;
+      return;
     }
 
     const fileItems = contents.map((f,i) => {
@@ -199,6 +250,11 @@ async function fetchFolderContents() {
               <button class="button is-small is-danger delete-button" data-filename="${name}">
                 <span class="icon"><i class="fas fa-trash-alt"></i></span>
               </button>
+              ${isOwner ? `
+              <button class="button is-small is-warning temp-link-button" data-filename="${name}">
+                <span class="icon"><i class="fas fa-link"></i></span>
+              </button>
+              ` : ''}
             </div>
           </div>`;
       } else {
@@ -227,6 +283,11 @@ async function fetchFolderContents() {
               <button class="button is-small is-danger delete-button" data-filename="${name}">
                 <span class="icon"><i class="fas fa-trash-alt"></i></span>
               </button>
+              ${isOwner ? `
+              <button class="button is-small is-warning temp-link-button" data-filename="${name}" title="Generate temporary link">
+                <span class="icon"><i class="fas fa-link"></i></span>
+              </button>
+              ` : ''}
             </div>
           </div>`;
       }
@@ -248,28 +309,31 @@ async function fetchFolderContents() {
         });
     });
 
-    // Add event listeners
-    document.querySelectorAll('.download-button').forEach(btn =>
-      btn.addEventListener('click', () => downloadFile(btn.dataset.filename))
-    );
-    document.querySelectorAll('.view-button').forEach(btn =>
-      btn.addEventListener('click', () => viewFile(btn.dataset.filename))
-    );
-    document.querySelectorAll('.delete-button').forEach(btn =>
-      btn.addEventListener('click', () => deleteFile(btn.dataset.filename))
-    );
-
+    // We no longer need to add individual event handlers here since we're using event delegation
   } catch (err) {
+    console.error('Error loading folder contents:', err);
     loadingSpinner.style.display = 'none';
-    console.error(err);
-    folderContentsDiv.innerHTML = `<div class="notification is-danger">Error: ${err.message}</div>`;
+    folderContentsDiv.innerHTML = `
+      <div class="notification is-danger">
+        Failed to load folder contents. Please try again later.
+      </div>
+    `;
   }
 }
 
 // Download
 async function downloadFile(filename) {
   const token = localStorage.getItem('jwtToken');
-  const folderId = folderIdSpan.textContent;
+  
+  // Get folder ID from URL params
+  const urlParams = new URLSearchParams(window.location.search);
+  const folderId = urlParams.get('folderID');
+  
+  if (!folderId) {
+    showNotification('Folder ID not found', 'is-danger');
+    return;
+  }
+  
   try {
     const tRes = await fetch(`/api/generate-download-token?folderID=${encodeURIComponent(folderId)}&filename=${encodeURIComponent(filename)}`, {
       headers: { 'Authorization': `Bearer ${token}` }
@@ -295,7 +359,15 @@ async function downloadFile(filename) {
 
 // View file
 function viewFile(filename) {
-  const folderId = folderIdSpan.textContent;
+  // Get folder ID from URL params
+  const urlParams = new URLSearchParams(window.location.search);
+  const folderId = urlParams.get('folderID');
+  
+  if (!folderId) {
+    showNotification('Folder ID not found', 'is-danger');
+    return;
+  }
+  
   window.location.href =
     `media_view-redarector.html?folderID=${encodeURIComponent(folderId)}&filename=${encodeURIComponent(filename)}`;
 }
@@ -303,7 +375,16 @@ function viewFile(filename) {
 // Delete
 async function deleteFile(filename) {
   const token = localStorage.getItem('jwtToken');
-  const folderId = folderIdSpan.textContent;
+  
+  // Get folder ID from URL params
+  const urlParams = new URLSearchParams(window.location.search);
+  const folderId = urlParams.get('folderID');
+  
+  if (!folderId) {
+    showNotification('Folder ID not found', 'is-danger');
+    return;
+  }
+  
   if (!confirm(`Delete ${filename}?`)) return;
 
   try {
@@ -325,26 +406,42 @@ async function deleteFile(filename) {
 // Upload
 async function uploadFile() {
   const token = localStorage.getItem('jwtToken');
-  const file  = fileInput.files[0];
-  const folderId = folderIdSpan.textContent;
+  
+  if (!fileInput) {
+    console.error('File input element not found');
+    return;
+  }
+  
+  const file = fileInput.files[0];
+  
+  // Get folder ID from URL params
+  const urlParams = new URLSearchParams(window.location.search);
+  const folderId = urlParams.get('folderID');
+  
+  if (!folderId) {
+    showNotification('Folder ID not found', 'is-danger');
+    return;
+  }
+  
   if (!file) return showNotification('Select a file first', 'is-warning');
 
   const form = new FormData();
   form.append('file', file);
-  uploadButton.classList.add('is-loading');
-  progressContainer.style.display = 'block';
+  
+  if (uploadButton) uploadButton.classList.add('is-loading');
+  if (progressContainer) progressContainer.style.display = 'block';
 
   const xhr = new XMLHttpRequest();
   xhr.upload.addEventListener('progress', e => {
-    if (e.lengthComputable) {
+    if (e.lengthComputable && uploadProgress && progressText) {
       const pct = Math.round(e.loaded / e.total * 100);
       uploadProgress.value = pct;
       progressText.textContent = pct + '%';
     }
   });
   xhr.onload = () => {
-    uploadButton.classList.remove('is-loading');
-    progressContainer.style.display = 'none';
+    if (uploadButton) uploadButton.classList.remove('is-loading');
+    if (progressContainer) progressContainer.style.display = 'none';
     if (xhr.status === 200) {
       showNotification('Uploaded successfully');
       fetchFolderContents();
@@ -352,15 +449,15 @@ async function uploadFile() {
       const err = JSON.parse(xhr.responseText);
       showNotification(err.message || 'Upload error', 'is-danger');
     }
-    fileInput.value = '';
-    fileNameDisplay.textContent = 'No file selected';
-    uploadButton.disabled = true;
-    uploadProgress.value = 0;
-    progressText.textContent = '0%';
+    if (fileInput) fileInput.value = '';
+    if (fileNameDisplay) fileNameDisplay.textContent = 'No file selected';
+    if (uploadButton) uploadButton.disabled = true;
+    if (uploadProgress) uploadProgress.value = 0;
+    if (progressText) progressText.textContent = '0%';
   };
   xhr.onerror = () => {
-    uploadButton.classList.remove('is-loading');
-    progressContainer.style.display = 'none';
+    if (uploadButton) uploadButton.classList.remove('is-loading');
+    if (progressContainer) progressContainer.style.display = 'none';
     showNotification('Network error', 'is-danger');
   };
   xhr.open('POST', `/api/upload-file/${encodeURIComponent(folderId)}`, true);
@@ -369,64 +466,87 @@ async function uploadFile() {
 }
 
 // UI handlers
-fileInput.addEventListener('change', () => {
-  const f = fileInput.files[0];
-  fileNameDisplay.textContent = f ? f.name : 'No file selected';
-  uploadButton.disabled = !f;
-});
-uploadButton.addEventListener('click', uploadFile);
-refreshButton.addEventListener('click', fetchFolderContents);
+if (fileInput) {
+  fileInput.addEventListener('change', () => {
+    const f = fileInput.files[0];
+    if (fileNameDisplay) fileNameDisplay.textContent = f ? f.name : 'No file selected';
+    if (uploadButton) uploadButton.disabled = !f;
+  });
+}
 
-['dragenter','dragover','dragleave','drop'].forEach(ev =>
-  dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); }, false)
-);
-['dragenter','dragover'].forEach(ev =>
-  dropZone.addEventListener(ev, () => dropZone.classList.add('active'), false)
-);
-['dragleave','drop'].forEach(ev =>
-  dropZone.addEventListener(ev, () => dropZone.classList.remove('active'), false)
-);
-dropZone.addEventListener('drop', e => {
-  const files = e.dataTransfer.files;
-  if (files.length) {
-    fileInput.files = files;
-    fileNameDisplay.textContent = files[0].name;
-    uploadButton.disabled = false;
-  }
-});
+if (uploadButton) {
+  uploadButton.addEventListener('click', uploadFile);
+}
 
-// Add Friend
-document.getElementById('addFriendButton').addEventListener('click', async () => {
-  const friendEmail = prompt('Enter the email of the user you want to invite:');
-  if (!friendEmail) return;
-  const token = localStorage.getItem('jwtToken');
-  const folderId = folderIdSpan.textContent;
-  try {
-    const res = await fetch('/api/add-friend', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ friendEmail, folderId })
-    });
-    const data = await res.json();
-    if (res.ok) showNotification(data.message || 'Invitation sent!');
-    else        showNotification(data.message || 'Failed', 'is-danger');
-  } catch (err) {
-    console.error(err);
-    showNotification('Error sending invitation.', 'is-danger');
-  }
-});
+if (refreshButton) {
+  refreshButton.addEventListener('click', fetchFolderContents);
+}
+
+if (dropZone) {
+  ['dragenter','dragover','dragleave','drop'].forEach(ev => 
+    dropZone.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); }, false)
+  );
+  ['dragenter','dragover'].forEach(ev =>
+    dropZone.addEventListener(ev, () => dropZone.classList.add('active'), false)
+  );
+  ['dragleave','drop'].forEach(ev =>
+    dropZone.addEventListener(ev, () => dropZone.classList.remove('active'), false)
+  );
+  dropZone.addEventListener('drop', e => {
+    const files = e.dataTransfer.files;
+    if (files.length && fileInput) {
+      fileInput.files = files;
+      if (fileNameDisplay) fileNameDisplay.textContent = files[0].name;
+      if (uploadButton) uploadButton.disabled = false;
+    }
+  });
+}
+
+// Add Friend button
+const addFriendButton = document.getElementById('addFriendButton');
+if (addFriendButton) {
+  addFriendButton.addEventListener('click', async () => {
+    const friendEmail = prompt('Enter the email of the user you want to invite:');
+    if (!friendEmail) return;
+    
+    const token = localStorage.getItem('jwtToken');
+    const urlParams = new URLSearchParams(window.location.search);
+    const folderId = urlParams.get('folderID');
+    
+    if (!folderId) {
+      showNotification('Folder ID not found', 'is-danger');
+      return;
+    }
+    
+    try {
+      const res = await fetch('/api/add-friend', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ friendEmail, folderId })
+      });
+      const data = await res.json();
+      if (res.ok) showNotification(data.message || 'Invitation sent!');
+      else        showNotification(data.message || 'Failed', 'is-danger');
+    } catch (err) {
+      console.error(err);
+      showNotification('Error sending invitation.', 'is-danger');
+    }
+  });
+}
 
 // Search filter
-searchInput.addEventListener('input', () => {
-  const term = searchInput.value.toLowerCase();
-  document.querySelectorAll('.file-item').forEach(item => {
-    const name = item.querySelector('.file-name').textContent.toLowerCase();
-    item.style.display = name.includes(term) ? 'flex' : 'none';
+if (searchInput) {
+  searchInput.addEventListener('input', () => {
+    const term = searchInput.value.toLowerCase();
+    document.querySelectorAll('.file-item').forEach(item => {
+      const name = item.querySelector('.file-name').textContent.toLowerCase();
+      item.style.display = name.includes(term) ? 'flex' : 'none';
+    });
   });
-});
+}
 
 // Permission modal code
 const permissionModal          = document.getElementById('permissionModal');
@@ -523,78 +643,265 @@ changePermissionButton.addEventListener('click', openPermissionModal);
 // Make Public/Private button handler
 makePublicButton.addEventListener('click', async () => {
   const token = localStorage.getItem('jwtToken');
-  const folderId = folderIdSpan.textContent;
-
-  // Prompt user for their choice
-  const userChoiceRaw = prompt(`Type 'yes' to make this folder public or 'no' to make it private`);
-  if (!userChoiceRaw) return;
-  const userChoice = userChoiceRaw.toLowerCase();
-  if (userChoice !== 'yes' && userChoice !== 'no') return;
-
-  makePublicButton.classList.add('is-loading');
-
+  
+  // Get folder ID from URL params
+  const urlParams = new URLSearchParams(window.location.search);
+  const folderId = urlParams.get('folderID');
+  
+  if (!folderId) {
+    showNotification('Folder ID not found', 'is-danger');
+    return;
+  }
+  
   try {
-    const endpoint = userChoice === 'yes'
-      ? `/api/make-my-folder-public/${encodeURIComponent(folderId)}`
-      : `/api/make-my-folder-private/${encodeURIComponent(folderId)}`;
-
-    console.log(`Calling endpoint: ${endpoint}`); // Debug logging
-
-    const res = await fetch(endpoint, {
+    const response = await fetch(`/api/make-my-folder-public/${folderId}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type':  'application/json'
-      },
-      body: JSON.stringify({})
-    });
-
-    // Log raw response for debugging
-    console.log(`Response status: ${res.status}`);
-    
-    // Parse response even if the status code indicates failure
-    const data = await res.json().catch(e => {
-      console.error('Failed to parse JSON:', e);
-      return { message: 'Failed to parse server response' };
+        'Authorization': `Bearer ${token}`
+      }
     });
     
-    console.log('Response data:', data); // Debug logging
-    
-    if (!res.ok) {
-      throw new Error(data.message || `Server error: ${res.status}`);
+    if (!response.ok) {
+      throw new Error('Failed to make folder public');
     }
-
-    showNotification(data.message || `Folder is now ${userChoice === 'yes' ? 'public' : 'private'}`);
-
-    // Update button text to reflect new state
-    makePublicButton.textContent = userChoice === 'yes' ? 'Make Private' : 'Make Public';
     
-    // Refresh folder contents to reflect any changes
-    fetchFolderContents();
-    
-  } catch (err) {
-    console.error(`Error updating folder state:`, err);
-    showNotification(`Error: ${err.message}`, 'is-danger');
-  } finally {
-    makePublicButton.classList.remove('is-loading');
+    showNotification('Folder is now public', 'is-success');
+    updatePublicButtonText();
+  } catch (error) {
+    console.error('Error making folder public:', error);
+    showNotification('Failed to make folder public', 'is-danger');
   }
 });
 
 // Check ownership to hide owner-only buttons
 async function checkOwnership() {
   const token = localStorage.getItem('jwtToken');
-  const folderId = folderIdSpan.textContent;
+  
+  // Get folder ID from URL params instead of relying on DOM element
+  const urlParams = new URLSearchParams(window.location.search);
+  const folderId = urlParams.get('folderID');
+  
+  if (!folderId) {
+    console.error('No folder ID found in URL');
+    return;
+  }
+  
   try {
-    const res = await fetch(`/api/am-I-owner-of-folder/${encodeURIComponent(folderId)}`, {
+    const response = await fetch(`/api/am-I-owner-of-folder/${folderId}`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
-    if (!res.ok) throw new Error('Not authorized');
-    const { isOwner } = await res.json();
-    if (!isOwner) {
-      changePermissionButton.style.display = 'none';
-      makePublicButton.style.display       = 'none';
+    
+    if (!response.ok) {
+      throw new Error('Failed to check ownership');
     }
-  } catch (err) {
-    console.error('Ownership check failed', err);
+    
+    const data = await response.json();
+    isOwner = data.isOwner;
+    
+    // Show/hide owner-only buttons
+    if (changePermissionButton) changePermissionButton.style.display = isOwner ? 'flex' : 'none';
+    if (makePublicButton) makePublicButton.style.display = isOwner ? 'flex' : 'none';
+    
+    // Update button text based on public status
+    updatePublicButtonText();
+  } catch (error) {
+    console.error('Error checking ownership:', error);
+    isOwner = false;
+  }
+}
+
+// Add event listeners after loading folder contents
+if (folderContentsDiv) {
+  folderContentsDiv.addEventListener('click', (e) => {
+    const target = e.target.closest('.download-button, .view-button, .delete-button, .temp-link-button');
+    if (!target) return;
+
+    const filename = target.dataset.filename;
+    if (target.classList.contains('download-button')) {
+      downloadFile(filename);
+    } else if (target.classList.contains('view-button')) {
+      viewFile(filename);
+    } else if (target.classList.contains('delete-button')) {
+      deleteFile(filename);
+    } else if (target.classList.contains('temp-link-button')) {
+      openTempLinkModal(filename);
+    }
+  });
+}
+
+// Temporary link modal functions
+function openTempLinkModal(filename) {
+  if (!tempLinkModal || !tempLinkFilename || !tempLinkResult) {
+    console.error('Temp link modal elements not found');
+    return;
+  }
+  
+  currentTempLinkFilename = filename;
+  tempLinkFilename.textContent = filename;
+  tempLinkResult.classList.add('is-hidden');
+  tempLinkModal.classList.add('is-active');
+}
+
+function handleCloseTempLinkModal() {
+  if (tempLinkModal) tempLinkModal.classList.remove('is-active');
+  currentTempLinkFilename = '';
+}
+
+async function generateTemporaryLink() {
+  const token = localStorage.getItem('jwtToken');
+  
+  // Get folder ID from URL params
+  const urlParams = new URLSearchParams(window.location.search);
+  const folderId = urlParams.get('folderID');
+  
+  if (!folderId) {
+    showNotification('Folder ID not found', 'is-danger');
+    return;
+  }
+  
+  if (!tempLinkDuration || !tempLinkResult || !tempLinkUrl) {
+    console.error('Temp link elements not found');
+    return;
+  }
+  
+  const hours = parseInt(tempLinkDuration.value);
+  
+  try {
+    const response = await fetch('/api/make-a-temporary-download-link', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        folderId,
+        filename: currentTempLinkFilename,
+        hours
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to generate temporary link');
+    }
+    
+    const data = await response.json();
+    tempLinkUrl.value = data.url;
+    tempLinkResult.classList.remove('is-hidden');
+  } catch (error) {
+    console.error('Error generating temporary link:', error);
+    showNotification('Failed to generate temporary link', 'is-danger');
+  }
+}
+
+function copyTempLink() {
+  if (!tempLinkUrl) {
+    console.error('Temp link URL element not found');
+    return;
+  }
+  
+  // Use modern Clipboard API
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(tempLinkUrl.value)
+      .then(() => {
+        showNotification('Link copied to clipboard', 'is-success');
+      })
+      .catch(err => {
+        console.error('Could not copy text: ', err);
+        // Fallback to old method
+        tempLinkUrl.select();
+        document.execCommand('copy');
+        showNotification('Link copied to clipboard', 'is-success');
+      });
+  } else {
+    // Fallback for browsers without Clipboard API
+    tempLinkUrl.select();
+    document.execCommand('copy');
+    showNotification('Link copied to clipboard', 'is-success');
+  }
+}
+
+// Add event listeners for temp link modal
+if (generateTempLinkButton) {
+  generateTempLinkButton.addEventListener('click', generateTemporaryLink);
+}
+
+if (copyTempLinkButton) {
+  copyTempLinkButton.addEventListener('click', copyTempLink);
+}
+
+if (closeTempLinkModal) {
+  closeTempLinkModal.addEventListener('click', handleCloseTempLinkModal);
+}
+
+if (closeTempLinkModalFooter) {
+  closeTempLinkModalFooter.addEventListener('click', handleCloseTempLinkModal);
+}
+
+// Update public button text based on folder's public status
+async function updatePublicButtonText() {
+  // Get folder ID from URL params instead of relying on DOM element
+  const urlParams = new URLSearchParams(window.location.search);
+  const folderId = urlParams.get('folderID');
+  
+  if (!folderId || !makePublicButton) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(`/api/is-folder-public/${folderId}`);
+    const data = await response.json();
+    
+    if (data.isPublic) {
+      makePublicButton.innerHTML = `
+        <span class="icon"><i class="fas fa-lock"></i></span>
+        <span>Make Private</span>
+      `;
+      makePublicButton.classList.remove('is-success');
+      makePublicButton.classList.add('is-warning');
+      makePublicButton.onclick = makePrivate;
+    } else {
+      makePublicButton.innerHTML = `
+        <span class="icon"><i class="fas fa-globe"></i></span>
+        <span>Make Public</span>
+      `;
+      makePublicButton.classList.remove('is-warning');
+      makePublicButton.classList.add('is-success');
+      makePublicButton.onclick = makePublic;
+    }
+  } catch (error) {
+    console.error('Error checking folder public status:', error);
+  }
+}
+
+// Make folder private
+async function makePrivate() {
+  const token = localStorage.getItem('jwtToken');
+  
+  // Get folder ID from URL params
+  const urlParams = new URLSearchParams(window.location.search);
+  const folderId = urlParams.get('folderID');
+  
+  if (!folderId) {
+    showNotification('Folder ID not found', 'is-danger');
+    return;
+  }
+  
+  try {
+    const response = await fetch(`/api/make-my-folder-private/${folderId}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to make folder private');
+    }
+    
+    showNotification('Folder is now private', 'is-success');
+    updatePublicButtonText();
+  } catch (error) {
+    console.error('Error making folder private:', error);
+    showNotification('Failed to make folder private', 'is-danger');
   }
 }
