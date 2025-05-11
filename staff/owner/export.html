@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FileShare - Data Export</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root {
+      --primary-color: #3f6ad8;
+      --primary-dark: #2f4eb2;
+      --danger-color: #d92550;
+      --danger-dark: #b81e44;
+      --success-color: #3ac47d;
+    }
+    
+    body {
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      padding: 20px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 550px;
+      padding: 30px;
+      border: none;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+      background-color: #ffffff;
+    }
+
+    .logo {
+      text-align: center;
+      margin-bottom: 20px;
+      color: var(--primary-color);
+    }
+
+    .card-title {
+      text-align: center;
+      font-weight: 600;
+      margin-bottom: 30px;
+      color: #2c3e50;
+      position: relative;
+      padding-bottom: 12px;
+    }
+    
+    .card-title:after {
+      content: '';
+      position: absolute;
+      width: 60px;
+      height: 4px;
+      background-color: var(--primary-color);
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      border-radius: 2px;
+    }
+
+    .export-section {
+      margin-bottom: 25px;
+    }
+
+    .export-section-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #6c757d;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .btn {
+      border-radius: 8px;
+      padding: 12px 15px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    }
+
+    .btn i {
+      margin-right: 10px;
+      font-size: 1.1rem;
+    }
+
+    .btn-primary {
+      background-color: var(--primary-color);
+      border-color: var(--primary-color);
+    }
+
+    .btn-primary:hover, .btn-primary:focus {
+      background-color: var(--primary-dark);
+      border-color: var(--primary-dark);
+      transform: translateY(-2px);
+      box-shadow: 0 5px 10px rgba(63, 106, 216, 0.2);
+    }
+
+    .btn-danger {
+      background-color: var(--danger-color);
+      border-color: var(--danger-color);
+    }
+
+    .btn-danger:hover, .btn-danger:focus {
+      background-color: var(--danger-dark);
+      border-color: var(--danger-dark);
+      transform: translateY(-2px);
+      box-shadow: 0 5px 10px rgba(217, 37, 80, 0.2);
+    }
+
+    .info-text {
+      font-size: 0.85rem;
+      color: #6c757d;
+      margin-top: 25px;
+      text-align: center;
+    }
+
+    .spinner-border {
+      width: 1rem;
+      height: 1rem;
+      margin-right: 8px;
+      display: none;
+    }
+
+    .loading .spinner-border {
+      display: inline-block;
+    }
+
+    .btn-label {
+      display: flex;
+      align-items: center;
+    }
+
+    .btn-action {
+      background-color: #f8f9fa;
+      color: #2c3e50;
+      border: 1px solid #e9ecef;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+    }
+
+    .success-toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background-color: var(--success-color);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      display: none;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .success-toast i {
+      margin-right: 8px;
+    }
+
+    @media (max-width: 576px) {
+      .card {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="logo">
+      <i class="fas fa-share-nodes fa-3x"></i>
+    </div>
+    <h2 class="card-title">Data Export Options</h2>
+
+    <div class="export-section">
+      <h3 class="export-section-title">User Management</h3>
+      <button class="btn btn-primary" onclick="exportData('/api/owner/export/users', 'Users')">
+        <div class="btn-label">
+          <i class="fas fa-users"></i>
+          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          Export Users
+        </div>
+        <i class="fas fa-file-excel"></i>
+      </button>
+      
+      <button class="btn btn-primary" onclick="exportData('/api/owner/export/groups', 'Groups')">
+        <div class="btn-label">
+          <i class="fas fa-user-group"></i>
+          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          Export Groups
+        </div>
+        <i class="fas fa-file-excel"></i>
+      </button>
+    </div>
+
+    <div class="export-section">
+      <h3 class="export-section-title">Content Management</h3>
+      <button class="btn btn-primary" onclick="exportData('/api/owner/export/folders', 'Folders')">
+        <div class="btn-label">
+          <i class="fas fa-folder-open"></i>
+          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          Export Folders
+        </div>
+        <i class="fas fa-file-excel"></i>
+      </button>
+      
+      <button class="btn btn-primary" onclick="exportData('/api/owner/export/audit-log', 'Audit Log')">
+        <div class="btn-label">
+          <i class="fas fa-clipboard-list"></i>
+          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          Export Audit Log
+        </div>
+        <i class="fas fa-file-excel"></i>
+      </button>
+    </div>
+    
+    <div class="export-section">
+      <h3 class="export-section-title">Complete Backup</h3>
+      <button class="btn btn-danger" onclick="confirmAllExport()">
+        <div class="btn-label">
+          <i class="fas fa-database"></i>
+          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          Export All Data
+        </div>
+        <i class="fas fa-download"></i>
+      </button>
+    </div>
+
+    <p class="info-text">
+      <i class="fas fa-info-circle"></i> All exports are in Excel (.xlsx) format and include only data you have permission to access.
+    </p>
+  </div>
+
+  <div class="success-toast" id="successToast">
+    <i class="fas fa-check-circle"></i>
+    <span id="toastMessage">Export successful!</span>
+  </div>
+
+  <script>
+    function exportData(endpoint, dataType) {
+      const button = event.currentTarget;
+      button.classList.add('loading');
+      button.disabled = true;
+      
+      const jwtToken = localStorage.getItem('jwtToken');
+      if (!jwtToken) {
+        showErrorMessage('You are not logged in. Please login first.');
+        button.classList.remove('loading');
+        button.disabled = false;
+        return;
+      }
+
+      fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${jwtToken}`
+        }
+      })
+      .then(response => {
+        if (response.ok) {
+          return response.blob();
+        } else {
+          return response.json().then(errorData => {
+            throw new Error(errorData.message || 'Failed to export data');
+          });
+        }
+      })
+      .then(blob => {
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = downloadUrl;
+        const filename = `${dataType.toLowerCase()}_export_${formatDate(new Date())}.xlsx`;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(downloadUrl);
+        
+        showSuccessMessage(`${dataType} exported successfully!`);
+      })
+      .catch(error => {
+        showErrorMessage('Error: ' + error.message);
+      })
+      .finally(() => {
+        button.classList.remove('loading');
+        button.disabled = false;
+      });
+    }
+    
+    function confirmAllExport() {
+      if (confirm('Are you sure you want to export all data? This may take a while for large datasets.')) {
+        exportData('/api/owner/export/all', 'All Data');
+      }
+    }
+    
+    function formatDate(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    
+    function showSuccessMessage(message) {
+      const toast = document.getElementById('successToast');
+      const toastMessage = document.getElementById('toastMessage');
+      
+      toastMessage.textContent = message;
+      toast.style.display = 'flex';
+      
+      setTimeout(() => {
+        toast.style.display = 'none';
+      }, 3000);
+    }
+    
+    function showErrorMessage(message) {
+      alert(message);
+    }
+  </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
