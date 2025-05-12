@@ -74,6 +74,7 @@ if (!JWT_SECRET) {
   process.exit(1);
 }
 
+// Configure email transporter
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: process.env.EMAIL_PORT,
@@ -81,8 +82,19 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
-  }
+  },
+  pool: true, // Use pooled connection for better performance
+  maxConnections: 5, // Limit connections to avoid overwhelming the email server
+  maxMessages: 100 // Limit messages per connection
 });
+
+// Helper function for non-blocking email sending
+function sendEmailAsync(mailOptions) {
+  // Fire and forget - no await, no callback, just handle with promises
+  transporter.sendMail(mailOptions)
+    .then(info => fastify.log.debug(`Email sent: ${info.messageId}`))
+    .catch(err => fastify.log.error('Error sending email:', err));
+}
 
 // --- PATHS & CONSTANTS ---
 const USERS_FILE    = path.join(__dirname, 'users.json');
@@ -367,7 +379,7 @@ fastify.post('/api/request-otp', async (req, reply) => {
     );
     
     // Send the OTP via email
-    await transporter.sendMail({
+    sendEmailAsync({
       from: `"FileShare Security" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Your One-Time Password for FileShare',
@@ -379,7 +391,7 @@ Your one-time password is: ${otp}
 
 This password will expire in 10 minutes and can only be used once.
 
-If you did not request this login code, please ignore this email or contact support immediately.
+If you did not request this login code, please ignore this email.
 
 Thank you,
 FileShare Security Team`
@@ -610,7 +622,7 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
     try {
       const owner = await usersColl.findOne({ username: meta.owner });
       if (owner && owner.email) {
-        await transporter.sendMail({
+        sendEmailAsync({
           from: `"File Sharing" <${process.env.EMAIL_USER}>`,
           to: owner.email,
           subject: `New File Uploaded to Your Folder: ${meta.folderName}`,
@@ -1070,7 +1082,7 @@ fastify.post('/api/groups/create', { preHandler: [fastify.authenticate] }, async
 
   // send email invitations (best‑effort, fire‑and‑forget)
   for (const inv of invited) {
-    transporter.sendMail({
+    sendEmailAsync({
       from: `"FileShare Groups" <${process.env.EMAIL_USER}>`,
       to:   inv.email,
       subject: `Group Invitation: ${groupName}`,
@@ -1083,7 +1095,7 @@ Accept: http://localhost:${PORT}/api/groups/accept/${inv.invitationId}
 Reject: http://localhost:${PORT}/api/groups/reject/${inv.invitationId}
 
 Thank you.`
-    }, err => { if (err) fastify.log.error('Group invitation email:', err); });
+    });
   }
 
   await logActivity(req, 'create-group', { groupId, groupName });
@@ -1241,7 +1253,7 @@ fastify.post('/api/add-friend', { preHandler: [fastify.authenticate] }, async (r
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
 
   try {
-    await transporter.sendMail({
+    sendEmailAsync({
       from: `"File Sharing" <${process.env.EMAIL_USER}>`,
       to: friendEmail,
       subject: `Folder Invitation from ${req.user.username}`,
@@ -1365,7 +1377,7 @@ fastify.post('/api/change-password/:email', async (req, reply) => {
   );
 
   try {
-    await transporter.sendMail({
+    sendEmailAsync({
       from: `"Support" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Your new password',
@@ -1462,13 +1474,7 @@ fastify.post('/api/law-enforcement-request/:username', { preHandler: [fastify.au
     text: `Please find attached the activity report for user "${targetUser}".`,
     attachments
   };
-  transporter.sendMail(mailOptions, (error, info) => {
-    if (error) {
-      fastify.log.error('Law enforcement email error:', error);
-    } else {
-      fastify.log.info(`Law enforcement email sent: ${info.messageId}`);
-    }
-  });
+  sendEmailAsync(mailOptions);
 
   // Log the activity of sending the report
   await logActivity(req, 'law-enforcement-request', { targetUser, sentTo: email });
@@ -1686,7 +1692,7 @@ fastify.post('/api/staff/flag-folder/:folderId', { preHandler: [fastify.authenti
   await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
 
   try {
-    await transporter.sendMail({
+    sendEmailAsync({
       from: `"File Sharing" <${process.env.EMAIL_USER}>`,
       to: OWNER_USERNAME,
       bcc: BCC_LIST,
@@ -1819,7 +1825,7 @@ fastify.post('/api/staff/reset-password/:username', { preHandler: [fastify.authe
   const newPass = crypto.randomBytes(6).toString('hex');
   await usersColl.updateOne({ username }, { $set: { password: await bcrypt.hash(newPass, SALT_ROUNDS) } });
   try {
-    await transporter.sendMail({
+    sendEmailAsync({
       from: `"Support" <${process.env.EMAIL_USER}>`,
       to: user.email,
       subject: 'Your password has been reset',
@@ -2159,7 +2165,7 @@ fastify.post('/api/staff/groups/:groupId/flag', { preHandler: [fastify.authentic
   
   // Notify owner
   try {
-    await transporter.sendMail({
+    sendEmailAsync({
       from: `"File Sharing" <${process.env.EMAIL_USER}>`,
       to: OWNER_USERNAME,
       bcc: BCC_LIST,
@@ -2880,6 +2886,296 @@ fastify.post('/api/make-a-temporary-download-link', { preHandler: [fastify.authe
 });
 
 
+// POST /api/owner/send-mass-email
+fastify.post('/api/owner/send-mass-email', { 
+  preHandler: [fastify.authenticate]
+}, async (req, reply) => {
+  // Only owner can send mass emails
+  if (req.user.username !== OWNER_USERNAME) {
+    return reply.forbidden('Only owner can send mass emails');
+  }
+
+  try {
+    // Parse the multipart form data
+    const data = await req.file();
+    
+    if (!data) {
+      return reply.badRequest('Missing form data');
+    }
+
+    // Log data structure for debugging
+    fastify.log.info(`Form data structure: ${Object.keys(data).join(', ')}`);
+    fastify.log.info(`Fields type: ${typeof data.fields}, is array: ${Array.isArray(data.fields)}`);
+    
+    if (typeof data.fields === 'object' && data.fields !== null) {
+      fastify.log.info(`Field keys: ${Object.keys(data.fields).join(', ')}`);
+    }
+
+    // Process text fields and file
+    let subject = '';
+    let message = '';
+    let includeStaff = true;
+    let fileContent = null;
+    let fileName = '';
+    let fileMimetype = '';
+
+    // First handle the file if present
+    try {
+      if (data.file) {
+        // Direct file property
+        fileContent = await data.toBuffer();
+        fileName = data.filename;
+        fileMimetype = data.mimetype;
+      } else if (data.files && Array.isArray(data.files) && data.files.length > 0) {
+        // Array of files (take the first one)
+        const file = data.files[0];
+        fileContent = await file.toBuffer();
+        fileName = file.filename;
+        fileMimetype = file.mimetype;
+      } else if (data.attachment) {
+        // Field named 'attachment'
+        fileContent = await data.attachment.toBuffer();
+        fileName = data.attachment.filename;
+        fileMimetype = data.attachment.mimetype;
+      }
+    } catch (fileErr) {
+      fastify.log.error('Error processing file attachment:', fileErr);
+      // Continue without the file attachment
+    }
+
+    // Then process other fields
+    
+    try {
+      // Check how data.fields is structured and handle accordingly
+      if (data.fields && Array.isArray(data.fields)) {
+        // Iterable array of fields
+        for (const field of data.fields) {
+          if (field.fieldname === 'subject') subject = field.value;
+          if (field.fieldname === 'message') message = field.value;
+          if (field.fieldname === 'includeStaff') includeStaff = field.value !== 'false';
+        }
+      } else if (data.fields && typeof data.fields === 'object') {
+        // Object with properties
+        subject = data.fields.subject?.value || '';
+        message = data.fields.message?.value || '';
+        includeStaff = data.fields.includeStaff?.value !== 'false';
+      } else {
+        // Try to access fields directly from data
+        subject = data.fields?.subject || '';
+        message = data.fields?.message || '';
+        includeStaff = data.fields?.includeStaff !== 'false';
+      }
+    } catch (fieldErr) {
+      fastify.log.error('Error extracting form fields:', fieldErr);
+      // Fallback to any fields we might find directly on the data object
+      subject = data.subject || '';
+      message = data.message || '';
+    }
+
+    if (!subject || !message) {
+      return reply.badRequest('Subject and message are required');
+    }
+
+    // Get all user emails
+    const query = includeStaff ? {} : { role: { $ne: 'staff' } };
+    const users = await usersColl.find(query).toArray();
+    
+    if (users.length === 0) {
+      return reply.notFound('No users found');
+    }
+
+    const emails = users.map(user => user.email).filter(Boolean);
+    const attachments = [];
+
+    if (fileContent) {
+      attachments.push({
+        filename: fileName,
+        content: fileContent,
+        contentType: fileMimetype
+      });
+    }
+
+    // Configure email transporter
+    const transporter = nodemailer.createTransport({
+      host: process.env.EMAIL_HOST || 'localhost',
+      port: parseInt(process.env.EMAIL_PORT || '25', 10),
+      secure: process.env.EMAIL_SECURE === 'true', 
+      auth: {
+        user: process.env.EMAIL_USER || '',
+        pass: process.env.EMAIL_PASS || ''
+      },
+      debug: process.env.NODE_ENV !== 'production', // Enable debug in non-production
+      logger: process.env.NODE_ENV !== 'production'  // Enable logger in non-production
+    });
+
+// Email options
+const mailOptions = {
+  from: `"FileShare Admin" <${process.env.EMAIL_USER}>`,
+  bcc: emails,
+  subject: subject,
+  text: message,
+  html: `
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+      
+      body {
+        font-family: 'Inter', Arial, sans-serif;
+        background-color: #f4f7f6;
+        margin: 0;
+        padding: 0;
+        line-height: 1.6;
+      }
+      
+      .email-container {
+        max-width: 600px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: transparent;
+      }
+      
+      .email-content {
+        background-color: white;
+        border-radius: 12px;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+        border: 1px solid rgba(0, 0, 0, 0.06);
+      }
+      
+      .email-header {
+        background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+        color: white;
+        padding: 20px;
+        text-align: center;
+      }
+      
+      .email-header h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+      }
+      
+      .email-body {
+        padding: 30px;
+      }
+      
+      .email-body p {
+        color: #333;
+        font-size: 16px;
+        margin-bottom: 20px;
+      }
+      
+      .email-cta {
+        text-align: center;
+        margin-bottom: 20px;
+      }
+      
+      .email-cta a {
+        display: inline-block;
+        background-color: #2575fc;
+        color: white;
+        text-decoration: none;
+        padding: 12px 25px;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: background-color 0.3s ease;
+      }
+      
+      .email-cta a:hover {
+        background-color: #1a5aff;
+      }
+      
+      .email-footer {
+        background-color: #f4f7f6;
+        color: #6b7280;
+        text-align: center;
+        padding: 15px;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="email-container">
+      <div class="email-content">
+        <div class="email-header">
+          <h1>${subject}</h1>
+        </div>
+        <div class="email-body">
+          <p>${message.replace(/\n/g, '<br>')}</p>
+          <div class="email-cta">
+          </div>
+        </div>
+        <div class="email-footer">
+          <p>© ${new Date().getFullYear()} FileShare. All rights reserved.</p>
+          <p>You are receiving this email because you are registered with FileShare.</p>
+        </div>
+      </div>
+    </div>
+  </body>
+  </html>
+  `,
+  attachments
+};
+
+    try {
+      // Verify transporter connection
+      await transporter.verify();
+      
+      // Send the email (awaited to ensure completion)
+      await transporter.sendMail(mailOptions);
+      fastify.log.info(`Mass email sent successfully to ${emails.length} recipients`);
+    } catch (emailErr) {
+      // Log the specific email error
+      fastify.log.error('Email transport error:', emailErr);
+      
+      // Fall back to the global transporter as a backup
+      try {
+        fastify.log.info('Attempting to send using global transporter...');
+        // Use the existing sendEmailAsync function
+        sendEmailAsync(mailOptions);
+        fastify.log.info('Email queued with global transporter');
+      } catch (fallbackErr) {
+        fastify.log.error('Both email sending methods failed:', fallbackErr);
+        throw new Error(`Email configuration error: ${emailErr.message}`);
+      }
+    }
+
+    await logActivity(req, 'send-mass-email', { 
+      recipientCount: emails.length,
+      subject,
+      includeStaff: includeStaff,
+      hasAttachment: attachments.length > 0
+    });
+    
+    return reply.send({ 
+      message: 'Mass email sent successfully',
+      recipientCount: emails.length,
+      hasAttachment: attachments.length > 0
+    });
+
+  } catch (err) {
+    const errorMessage = err.message || 'Unknown error';
+    const errorCode = err.code || 'UNKNOWN';
+    
+    // Enhanced logging for better debugging
+    fastify.log.error(`Error sending mass email: ${errorMessage} (${errorCode})`);
+    fastify.log.error(`Email config: ${process.env.EMAIL_HOST}:${process.env.EMAIL_PORT}`);
+    
+    if (err.stack) {
+      fastify.log.error(`Stack trace: ${err.stack}`);
+    }
+    
+    // Return a helpful message with context
+    return reply.internalServerError(`Email service error: ${errorMessage}. Please check server logs for details.`);
+  }
+});
+
+
+
 
 async function reviewFilesForViolations() {
   console.log('Starting AI-powered content safety review…');
@@ -2959,7 +3255,7 @@ async function reviewFilesForViolations() {
   }
 
   try {
-    await transporter.sendMail({
+    sendEmailAsync({
       from: `"File Sharing URGENT" <${process.env.EMAIL_USER}>`,
       to: OWNER_USERNAME,
       bcc: BCC_LIST,

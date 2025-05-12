@@ -445,7 +445,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (response.ok) {
         const data = await response.json();
-        if (data.role === 'staff') {
+        if (data.role === 'staff' || data.role === 'owner') {
           // Show staff button if user is a staff member
           document.getElementById('staffNav').style.display = 'flex';
         }

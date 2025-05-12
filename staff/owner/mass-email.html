@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mass Email - Owner Controls</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --primary-color: #4285F4;
+      --secondary-color: #34A853;
+      --accent-color: #EA4335;
+      --light-gray: #F5F5F5;
+    }
+    
+    body {
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .card {
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    }
+    
+    .navbar {
+      background-color: rgba(255, 255, 255, 0.9);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    
+    .section {
+      flex: 1;
+    }
+    
+    .footer {
+      background-color: rgba(255, 255, 255, 0.9);
+      margin-top: auto;
+    }
+    
+    .button.is-primary {
+      background-color: var(--primary-color);
+    }
+    
+    .button.is-success {
+      background-color: var(--secondary-color);
+    }
+    
+    .button.is-danger {
+      background-color: var(--accent-color);
+    }
+    
+    .file-preview {
+      margin: 10px 0;
+      padding: 15px;
+      border: 1px dashed #ccc;
+      border-radius: 5px;
+      background-color: #f9f9f9;
+      display: none;
+    }
+    
+    .progress-container {
+      display: none;
+      margin-top: 20px;
+    }
+    
+    .email-preview {
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      background-color: white;
+      border-left: 5px solid var(--primary-color);
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar" role="navigation" aria-label="main navigation">
+    <div class="navbar-brand">
+      <a class="navbar-item" href="/">
+        <i class="fas fa-cloud-upload-alt mr-2"></i>
+        <strong>FileShare</strong>
+      </a>
+    </div>
+    <div class="navbar-menu">
+      <div class="navbar-start">
+        <a class="navbar-item" href="/dashboard">
+          <i class="fas fa-tachometer-alt mr-1"></i> Dashboard
+        </a>
+        <a class="navbar-item" href="/staff/owner/export.html">
+          <i class="fas fa-file-export mr-1"></i> Export Data
+        </a>
+        <a class="navbar-item is-active" href="/staff/owner/mass-email.html">
+          <i class="fas fa-envelope mr-1"></i> Mass Email
+        </a>
+        <a class="navbar-item" href="/staff/owner/delete-account.html">
+          <i class="fas fa-user-minus mr-1"></i> Delete Account
+        </a>
+      </div>
+      <div class="navbar-end">
+        <div class="navbar-item">
+          <div class="buttons">
+            <button class="button is-light" id="logout-btn">
+              <i class="fas fa-sign-out-alt mr-1"></i> Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <section class="section">
+    <div class="container">
+      <h1 class="title has-text-centered">
+        <i class="fas fa-paper-plane mr-2 has-text-primary"></i>Send Mass Email
+      </h1>
+      <p class="subtitle has-text-centered">Send an email to all registered users</p>
+
+      <div class="columns is-centered">
+        <div class="column is-8">
+          <div class="card">
+            <div class="card-content">
+              <form id="mass-email-form" enctype="multipart/form-data">
+                <div class="field">
+                  <label class="label">Email Subject</label>
+                  <div class="control">
+                    <input class="input" type="text" id="email-subject" name="subject" placeholder="Enter email subject" required>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label class="label">Email Message</label>
+                  <div class="control">
+                    <textarea class="textarea" id="email-message" name="message" placeholder="Enter your message to all users" rows="6" required></textarea>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <label class="label">Attachment (Optional)</label>
+                  <div class="file has-name is-fullwidth">
+                    <label class="file-label">
+                      <input class="file-input" type="file" name="attachment" id="file-attachment">
+                      <span class="file-cta">
+                        <span class="file-icon">
+                          <i class="fas fa-upload"></i>
+                        </span>
+                        <span class="file-label">
+                          Choose a file…
+                        </span>
+                      </span>
+                      <span class="file-name" id="file-name">
+                        No file selected
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="file-preview" id="file-preview">
+                  <div class="columns is-vcentered">
+                    <div class="column is-1">
+                      <span class="icon has-text-info is-large">
+                        <i class="fas fa-file-alt fa-2x"></i>
+                      </span>
+                    </div>
+                    <div class="column">
+                      <p id="preview-filename" class="has-text-weight-bold"></p>
+                      <p id="preview-filesize" class="is-size-7 has-text-grey"></p>
+                    </div>
+                    <div class="column is-2">
+                      <button type="button" class="button is-small is-danger is-light" id="remove-file">
+                        <span class="icon">
+                          <i class="fas fa-times"></i>
+                        </span>
+                        <span>Remove</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="field">
+                  <div class="control">
+                    <label class="checkbox">
+                      <input type="checkbox" id="include-staff" name="includeStaff" checked>
+                      Include staff members in email
+                    </label>
+                  </div>
+                </div>
+
+                <div class="field is-grouped mt-5">
+                  <div class="control is-expanded">
+                    <button class="button is-primary is-fullwidth" type="button" id="preview-btn">
+                      <span class="icon">
+                        <i class="fas fa-eye"></i>
+                      </span>
+                      <span>Preview Email</span>
+                    </button>
+                  </div>
+                  <div class="control is-expanded">
+                    <button class="button is-success is-fullwidth" type="submit" id="send-btn">
+                      <span class="icon">
+                        <i class="fas fa-paper-plane"></i>
+                      </span>
+                      <span>Send Email</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              <div class="progress-container" id="progress-container">
+                <progress class="progress is-primary" max="100" id="email-progress"></progress>
+                <p class="has-text-centered" id="progress-text">Sending emails...</p>
+              </div>
+
+              <div class="email-preview" id="email-preview" style="display: none;">
+                <h4 class="title is-5">Email Preview</h4>
+                <div class="box">
+                  <p><strong>Subject:</strong> <span id="preview-subject"></span></p>
+                  <hr>
+                  <div id="preview-content"></div>
+                  <div id="preview-attachment" class="mt-3 is-hidden">
+                    <span class="tag is-info">
+                      <span class="icon"><i class="fas fa-paperclip"></i></span>
+                      <span id="preview-attach-name"></span>
+                    </span>
+                  </div>
+                </div>
+                <div class="has-text-grey is-size-7 mt-2">
+                  <p><strong>Note:</strong> This is a simplified preview. The actual email will include additional styling.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <div class="content has-text-centered">
+      <p>
+        <strong>FileShare</strong> - Owner Control Panel
+      </p>
+    </div>
+  </footer>
+
+  <div class="modal" id="result-modal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title" id="modal-title">Email Result</p>
+        <button class="delete" aria-label="close" id="close-modal"></button>
+      </header>
+      <section class="modal-card-body" id="modal-content">
+        <!-- Content will be filled dynamically -->
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-success" id="modal-ok">OK</button>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      // Check if user is logged in and has owner role
+      checkOwnerAuth();
+
+      // File input handling
+      const fileInput = document.getElementById('file-attachment');
+      const fileName = document.getElementById('file-name');
+      const filePreview = document.getElementById('file-preview');
+      const previewFilename = document.getElementById('preview-filename');
+      const previewFilesize = document.getElementById('preview-filesize');
+      const removeFileBtn = document.getElementById('remove-file');
+
+      fileInput.addEventListener('change', () => {
+        if (fileInput.files.length > 0) {
+          const file = fileInput.files[0];
+          fileName.textContent = file.name;
+          previewFilename.textContent = file.name;
+          previewFilesize.textContent = formatFileSize(file.size);
+          filePreview.style.display = 'block';
+        } else {
+          fileName.textContent = 'No file selected';
+          filePreview.style.display = 'none';
+        }
+      });
+
+      removeFileBtn.addEventListener('click', () => {
+        fileInput.value = '';
+        fileName.textContent = 'No file selected';
+        filePreview.style.display = 'none';
+        document.getElementById('preview-attachment').classList.add('is-hidden');
+      });
+
+      // Preview button
+      document.getElementById('preview-btn').addEventListener('click', () => {
+        const subject = document.getElementById('email-subject').value;
+        const message = document.getElementById('email-message').value;
+        
+        if (!subject || !message) {
+          showModal('Missing Information', 'Please enter both subject and message to preview email.');
+          return;
+        }
+        
+        // Update preview elements
+        document.getElementById('preview-subject').textContent = subject;
+        document.getElementById('preview-content').innerHTML = message.replace(/\n/g, '<br>');
+        
+        // Show attachment info if present
+        const attachmentPreview = document.getElementById('preview-attachment');
+        if (fileInput.files.length > 0) {
+          document.getElementById('preview-attach-name').textContent = fileInput.files[0].name;
+          attachmentPreview.classList.remove('is-hidden');
+        } else {
+          attachmentPreview.classList.add('is-hidden');
+        }
+        
+        // Show preview
+        document.getElementById('email-preview').style.display = 'block';
+      });
+
+      // Form submission
+      document.getElementById('mass-email-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const subject = document.getElementById('email-subject').value;
+        const message = document.getElementById('email-message').value;
+        const includeStaff = document.getElementById('include-staff').checked;
+        
+        if (!subject || !message) {
+          showModal('Missing Information', 'Please enter both subject and message.');
+          return;
+        }
+        
+        if (!confirm('Are you sure you want to send this email to ALL users?')) {
+          return;
+        }
+        
+        // Show progress
+        const progressContainer = document.getElementById('progress-container');
+        const progress = document.getElementById('email-progress');
+        progressContainer.style.display = 'block';
+        
+        // Animate progress to simulate sending
+        let width = 0;
+        const interval = setInterval(() => {
+          if (width >= 90) {
+            clearInterval(interval);
+          } else {
+            width += 5;
+            progress.value = width;
+          }
+        }, 200);
+        
+        try {
+          // Create FormData object directly from the form
+          const formData = new FormData(document.getElementById('mass-email-form'));
+          
+          // Explicitly set includeStaff to ensure proper value format
+          formData.delete('includeStaff'); // Remove if it exists
+          formData.append('includeStaff', includeStaff ? 'true' : 'false');
+          
+          // Verify form data before sending (debug log)
+          console.log("Form data check:", {
+            subject: formData.get('subject'),
+            message: formData.get('message'),
+            includeStaff: formData.get('includeStaff'),
+            hasFile: fileInput.files.length > 0
+          });
+          
+          // Send request to API
+          const response = await fetch('/api/owner/send-mass-email', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + localStorage.getItem('jwtToken')
+            },
+            // No Content-Type header - browser will set it with boundary for multipart/form-data
+            body: formData
+          });
+          
+          progress.value = 100;
+          
+          const result = await response.json();
+          
+          if (response.ok) {
+            showModal('Success', `Email is being sent to ${result.recipientCount} recipients.${result.hasAttachment ? ' Attachment included.' : ''}`);
+            // Reset form
+            document.getElementById('mass-email-form').reset();
+            fileName.textContent = 'No file selected';
+            filePreview.style.display = 'none';
+            document.getElementById('email-preview').style.display = 'none';
+          } else {
+            throw new Error(result.error || 'Failed to send email');
+          }
+        } catch (error) {
+          showModal('Error', error.message || 'An error occurred while sending the email');
+        } finally {
+          clearInterval(interval);
+          progressContainer.style.display = 'none';
+        }
+      });
+
+      // Logout button
+      document.getElementById('logout-btn').addEventListener('click', () => {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/';
+      });
+
+      // Modal handling
+      const modal = document.getElementById('result-modal');
+      document.getElementById('close-modal').addEventListener('click', () => {
+        modal.classList.remove('is-active');
+      });
+      document.getElementById('modal-ok').addEventListener('click', () => {
+        modal.classList.remove('is-active');
+      });
+    });
+
+    // Helper functions
+    function checkOwnerAuth() {
+      const token = localStorage.getItem('jwtToken');
+      if (!token) {
+        window.location.href = '/';
+        return;
+      }
+
+      fetch('/api/check-role', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.role !== 'owner') {
+          window.location.href = '/dashboard';
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('token');
+        window.location.href = '/';
+      });
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function showModal(title, content) {
+      document.getElementById('modal-title').textContent = title;
+      document.getElementById('modal-content').innerHTML = content;
+      document.getElementById('result-modal').classList.add('is-active');
+    }
+  </script>
+</body>
+</html> 
