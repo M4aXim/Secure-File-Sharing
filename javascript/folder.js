@@ -70,6 +70,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 3) After passing public/auth check, load folder contents & ownership
   checkOwnership();
   fetchFolderContents();
+
+  // Add event listener for export button
+  const exportZipButton = document.getElementById('exportZipButton');
+  if (exportZipButton) {
+    exportZipButton.addEventListener('click', exportAsZip);
+  }
 });
 
 // DOM refs
@@ -701,6 +707,8 @@ async function checkOwnership() {
     // Show/hide owner-only buttons
     if (changePermissionButton) changePermissionButton.style.display = isOwner ? 'flex' : 'none';
     if (makePublicButton) makePublicButton.style.display = isOwner ? 'flex' : 'none';
+    if (addFriendButton) addFriendButton.style.display = isOwner ? 'flex' : 'none';
+    if (exportZipButton) exportZipButton.style.display = isOwner ? 'inline-flex' : 'none';
     
     // Update button text based on public status
     updatePublicButtonText();
@@ -904,4 +912,55 @@ async function makePrivate() {
     console.error('Error making folder private:', error);
     showNotification('Failed to make folder private', 'is-danger');
   }
+}
+
+// Add this new function for exporting folder as ZIP
+function exportAsZip() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const folderId = urlParams.get('folderID');
+  
+  if (!folderId) {
+    showNotification('Folder ID not found', 'is-danger');
+    return;
+  }
+  
+  const token = localStorage.getItem('jwtToken');
+  if (!token) {
+    showNotification('You must be logged in to export', 'is-danger');
+    return;
+  }
+  
+  // Show loading notification
+  showNotification('Preparing ZIP file for download...', 'is-info');
+  
+  // Create a download link
+  const downloadLink = document.createElement('a');
+  downloadLink.href = `/api/export-as-zip/${folderId}`;
+  downloadLink.setAttribute('download', '');
+  
+  // Add the authorization header
+  fetch(`/api/export-as-zip/${folderId}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  })
+  .then(response => {
+    if (!response.ok) {
+      throw new Error(`Error ${response.status}: ${response.statusText}`);
+    }
+    return response.blob();
+  })
+  .then(blob => {
+    const url = window.URL.createObjectURL(blob);
+    downloadLink.href = url;
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    window.URL.revokeObjectURL(url);
+    showNotification('ZIP download started successfully', 'is-success');
+  })
+  .catch(error => {
+    console.error('Export error:', error);
+    showNotification(`Failed to export folder: ${error.message}`, 'is-danger');
+  });
 }

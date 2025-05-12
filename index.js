@@ -27,6 +27,7 @@ const sharp              = require('sharp');
 const ffmpeg             = require('fluent-ffmpeg');
 const ffmpegInstaller    = require('@ffmpeg-installer/ffmpeg');
 const XLSX               = require('xlsx');
+const archiver           = require('archiver');
 
 // Configure ffmpeg path
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
@@ -750,6 +751,92 @@ fastify.get('/api/unable-to-load/download-file', async (req, reply) => {
   }
 });
 
+async function streamToBuffer(stream) {
+  return Buffer.concat(await stream.transformToByteArray());
+}
+
+
+fastify.get('/api/export-as-zip/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { folderId } = req.params;
+  
+  // Load folder metadata
+  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder = folders.find(f => f.folderId === folderId);
+  if (!folder) {
+    return reply.notFound('Folder not found');
+  }
+  
+  // Check if user is the owner
+  if (folder.owner !== req.user.username) {
+    return reply.forbidden('Only folder owner can export');
+  }
+  
+  // List all files in the folder
+  try {
+    const data = await s3.send(new ListObjectsV2Command({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Prefix: `folders/${folderId}/`
+    }));
+    
+    if (!data.Contents || data.Contents.length === 0) {
+      return reply.notFound('No files found in folder');
+    }
+    
+    // Set response headers for zip file
+    reply.raw.setHeader('Content-Type', 'application/zip');
+    reply.raw.setHeader('Content-Disposition', `attachment; filename="${folder.folderName.replace(/[^a-z0-9]/gi, '_')}_export.zip"`);
+    reply.raw.flushHeaders();
+
+    // Create a zip archive
+    const archive = archiver('zip', {
+      zlib: { level: 5 } // Compression level
+    });
+
+    // Handle archive errors
+    archive.on('error', (err) => {
+      fastify.log.error('Archive error:', err);
+      reply.internalServerError('Failed to create zip archive');
+    });
+
+    // Pipe the archive to the response
+    archive.pipe(reply.raw);
+
+    // Add each file to the archive
+    for (const obj of data.Contents) {
+      const filename = obj.Key.slice(`folders/${folderId}/`.length);
+      if (!filename) continue; // Skip folder "files"
+      
+      try {
+        const response = await s3.send(new GetObjectCommand({
+          Bucket: process.env.S3_BUCKET_NAME,
+          Key: obj.Key
+        }));
+        
+        // Directly stream the file content to the archive without buffering
+        archive.append(response.Body, { name: filename });
+      } catch (fileErr) {
+        fastify.log.error(`Error adding file ${filename} to archive:`, fileErr);
+        // Continue with other files even if one fails
+      }
+    }
+
+    // Finalize the archive
+    await archive.finalize();
+    
+    await logActivity(req, 'export-folder-as-zip', { 
+      folderId, 
+      folderName: folder.folderName, 
+      fileCount: data.Contents.length 
+    });
+  } catch (err) {
+    fastify.log.error('Error exporting folder as zip:', err);
+    return reply.internalServerError('Failed to create zip archive');
+  }
+});
+
+
+
+
 // GET /api/open-file
 fastify.get('/api/open-file', async (req, reply) => {
   const { folderId, filename } = req.query;
@@ -793,7 +880,6 @@ fastify.get('/api/open-file', async (req, reply) => {
   reply.header('Content-Disposition', `inline; filename="${filename}"`);
   return reply.send(response.Body);
 });
-// GET /api/view-file/:folderId/*
 // GET /api/view-file/:folderId/*
 fastify.get('/api/view-file/:folderId/*', async (req, reply) => {
   const { folderId } = req.params;
@@ -1788,8 +1874,13 @@ fastify.get('/api/staff/folder-contents', { preHandler: [fastify.authenticate, f
 
 // Check role
 fastify.get('/api/check-role', { preHandler: [fastify.authenticate] }, async (req) => {
+  // If the user is the owner, return "owner" as the role
+  if (req.user.username === OWNER_USERNAME) {
+    return { role: 'owner' };
+  }
   return { role: req.user.role };
 });
+
 
 // Am I owner or can add users
 fastify.get('/api/am-I-owner-of-folder/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
@@ -2950,4 +3041,3 @@ const start = async () => {
 };
 
 start();
-
