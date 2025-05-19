@@ -3,6 +3,9 @@ let isGridView = localStorage.getItem('gridView') === 'true';
 let isOwner = false;
 let currentTempLinkFilename = '';
 
+// CDN Modal functionality
+let cdnModal, cdnDirectLink;
+
 document.addEventListener('DOMContentLoaded', async () => {
   const token       = localStorage.getItem('jwtToken');
   const urlParams   = new URLSearchParams(window.location.search);
@@ -76,6 +79,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (exportZipButton) {
     exportZipButton.addEventListener('click', exportAsZip);
   }
+
+  // Initialize CDN modal elements
+  cdnModal = document.getElementById('cdnUsageModal');
+  cdnDirectLink = document.getElementById('cdnDirectLink');
+
+  // Close modal functionality
+  document.querySelectorAll('.modal .delete, .modal .button[aria-label="close"]').forEach(button => {
+    button.addEventListener('click', () => {
+      cdnModal.classList.remove('is-active');
+    });
+  });
+
+  // Copy link button functionality
+  document.querySelector('.copy-link').addEventListener('click', () => {
+    copyToClipboard(cdnDirectLink.value);
+  });
 });
 
 // DOM refs
@@ -253,6 +272,10 @@ async function fetchFolderContents() {
               <button class="button is-small is-primary view-button" data-filename="${name}">
                 <span class="icon"><i class="fas fa-eye"></i></span>
               </button>
+              <button class="button is-small is-warning cdn-button" data-filename="${name}" data-filetype="${getMimeType(name)}" title="Get CDN Link">
+                <span class="icon"><i class="fas fa-link"></i></span>
+                <span>CDN</span>
+              </button>
               <button class="button is-small is-danger delete-button" data-filename="${name}">
                 <span class="icon"><i class="fas fa-trash-alt"></i></span>
               </button>
@@ -285,6 +308,10 @@ async function fetchFolderContents() {
               </button>
               <button class="button is-small is-primary view-button" data-filename="${name}">
                 <span class="icon"><i class="fas fa-eye"></i></span>
+              </button>
+              <button class="button is-small is-warning cdn-button" data-filename="${name}" data-filetype="${getMimeType(name)}" title="Get CDN Link">
+                <span class="icon"><i class="fas fa-link"></i></span>
+                <span>CDN</span>
               </button>
               <button class="button is-small is-danger delete-button" data-filename="${name}">
                 <span class="icon"><i class="fas fa-trash-alt"></i></span>
@@ -963,4 +990,62 @@ function exportAsZip() {
     console.error('Export error:', error);
     showNotification(`Failed to export folder: ${error.message}`, 'is-danger');
   });
+}
+
+// Add getMimeType function after getFileIcon function
+function getMimeType(filename) {
+  const ext = filename.split('.').pop().toLowerCase();
+  const mimeTypes = {
+    // Images
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'svg': 'image/svg+xml',
+    // Videos
+    'mp4': 'video/mp4',
+    'webm': 'video/webm',
+    'ogg': 'video/ogg',
+    // Audio
+    'mp3': 'audio/mpeg',
+    'wav': 'audio/wav',
+    // Documents
+    'pdf': 'application/pdf',
+    'doc': 'application/msword',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    // Web
+    'js': 'application/javascript',
+    'css': 'text/css',
+    'html': 'text/html',
+    // Default
+    'txt': 'text/plain'
+  };
+  return mimeTypes[ext] || 'application/octet-stream';
+}
+
+// Add event listener for CDN button clicks
+document.addEventListener('click', async (e) => {
+  if (e.target.closest('.cdn-button')) {
+    const button = e.target.closest('.cdn-button');
+    const filename = button.dataset.filename;
+    const fileType = button.dataset.filetype;
+    const urlParams = new URLSearchParams(window.location.search);
+    const folderId = urlParams.get('folderID');
+    
+    if (!folderId) {
+      showNotification('Folder ID not found', 'is-danger');
+      return;
+    }
+
+    // Show CDN usage modal with the file information
+    showCdnUsageModal(`${folderId}:${filename}`, filename, fileType);
+  }
+});
+
+// Function to show CDN usage modal
+function showCdnUsageModal(fileUrl, fileName, fileType) {
+  const directUrl = `https://hackclub.maksimmalbasa.in.rs/api/v1/file/${fileUrl}`;
+  cdnDirectLink.value = directUrl;
+  cdnModal.classList.add('is-active');
 }

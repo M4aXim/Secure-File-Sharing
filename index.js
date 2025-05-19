@@ -28,6 +28,8 @@ const ffmpeg             = require('fluent-ffmpeg');
 const ffmpegInstaller    = require('@ffmpeg-installer/ffmpeg');
 const XLSX               = require('xlsx');
 const archiver           = require('archiver');
+const jwt                = require('jsonwebtoken');
+const { ObjectId }       = require('mongodb');
 
 // Configure ffmpeg path
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
@@ -42,6 +44,7 @@ const MONGO_URI = process.env.MONGO_URI;
 const client    = new MongoClient(MONGO_URI);
 let usersColl;
 let bannedIpsColl;
+let apiKeysColl;
 
 async function initMongo() {
   try {
@@ -49,6 +52,7 @@ async function initMongo() {
     const db = client.db('hackclub');
     usersColl     = db.collection('users');
     bannedIpsColl = db.collection('banned_ips');
+    apiKeysColl   = db.collection('api_keys');
     fastify.log.info('✅ Connected to MongoDB');
   } catch (err) {
     fastify.log.error('❌ MongoDB connection error:', err);
@@ -57,13 +61,139 @@ async function initMongo() {
 }
 initMongo();
 
+// --- API KEY MANAGEMENT ---
+async function generateApiKey(username, description) {
+  const key = crypto.randomBytes(32).toString('hex');
+  const apiKey = {
+    username,
+    key,
+    description,
+    created: new Date(),
+    lastUsed: null,
+    usageCount: 0,
+    isActive: true
+  };
+  
+  await apiKeysColl.insertOne(apiKey);
+  return key;
+}
+
+async function validateApiKey(key) {
+  const apiKey = await apiKeysColl.findOne({ key, isActive: true });
+  if (!apiKey) return null;
+  
+  await apiKeysColl.updateOne(
+    { _id: apiKey._id },
+    { 
+      $set: { lastUsed: new Date() },
+      $inc: { usageCount: 1 }
+    }
+  );
+  return apiKey;
+}
+
+// --- API KEY ENDPOINTS ---
+fastify.post('/api/v1/keys', async (req, reply) => {
+  try {
+    // Verify JWT token
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return reply.code(401).send({ error: 'Authentication required' });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { description } = req.body;
+
+    if (!description) {
+      return reply.code(400).send({ error: 'Description is required' });
+    }
+
+    const key = await generateApiKey(decoded.username, description);
+    
+    // Log the activity
+    await logActivity(req, 'generate-api-key', { description });
+
+    return reply.send({ key });
+  } catch (err) {
+    if (err.name === 'JsonWebTokenError') {
+      return reply.code(401).send({ error: 'Invalid token' });
+    }
+    throw err;
+  }
+});
+
+fastify.get('/api/v1/keys', async (req, reply) => {
+  try {
+    // Verify JWT token
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return reply.code(401).send({ error: 'Authentication required' });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    
+    // Get all active API keys for the user
+    const keys = await apiKeysColl.find(
+      { username: decoded.username, isActive: true },
+      { projection: { key: 0 } } // Don't send the actual keys
+    ).toArray();
+
+    return reply.send({ keys });
+  } catch (err) {
+    if (err.name === 'JsonWebTokenError') {
+      return reply.code(401).send({ error: 'Invalid token' });
+    }
+    throw err;
+  }
+});
+
+fastify.delete('/api/v1/keys/:keyId', async (req, reply) => {
+  try {
+    // Verify JWT token
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return reply.code(401).send({ error: 'Authentication required' });
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { keyId } = req.params;
+
+    // Verify the key belongs to the user and deactivate it
+    const result = await apiKeysColl.updateOne(
+      { 
+        _id: new ObjectId(keyId), 
+        username: decoded.username,
+        isActive: true 
+      },
+      { $set: { isActive: false } }
+    );
+
+    if (result.matchedCount === 0) {
+      return reply.code(404).send({ error: 'API key not found' });
+    }
+
+    // Log the activity
+    await logActivity(req, 'revoke-api-key', { keyId });
+
+    return reply.send({ success: true });
+  } catch (err) {
+    if (err.name === 'JsonWebTokenError') {
+      return reply.code(401).send({ error: 'Invalid token' });
+    }
+    throw err;
+  }
+});
+
 // --- CONFIGURATION ---
 const PORT             = process.env.PORT || 3000;
 const JWT_SECRET       = process.env.JWT_SECRET;
 const TOKEN_EXPIRATION = process.env.TOKEN_EXPIRATION || '2h';
 const SALT_ROUNDS      = parseInt(process.env.SALT_ROUNDS, 10) || 12;
-const RATE_LIMIT_MAX   = parseInt(process.env.RATE_LIMIT_MAX, 10) || 100;
-const RATE_LIMIT_WIN   = process.env.RATE_LIMIT_WINDOW || '1 minute';
+const RATE_LIMIT_MAX   = parseInt(process.env.RATE_LIMIT_MAX, 10) || 100;  // Global rate limit
+const RATE_LIMIT_WIN   = process.env.RATE_LIMIT_WINDOW || '1 minute';      // Global time window
+const AUTH_RATE_LIMIT  = parseInt(process.env.AUTH_RATE_LIMIT, 10) || 10;  // Auth endpoints
+const UPLOAD_RATE_LIMIT = parseInt(process.env.UPLOAD_RATE_LIMIT, 10) || 5; // Upload endpoints
+const BAN_DURATION_MS  = parseInt(process.env.BAN_DURATION_MS, 10) || 3600000; // 1 hour ban
 const BCC_LIST         = process.env.BCC
   ? process.env.BCC.split(',').map(addr => addr.trim())
   : [];
@@ -101,8 +231,181 @@ const USERS_FILE    = path.join(__dirname, 'users.json');
 const FOLDERS_FILE  = path.join(__dirname, 'folders.json');
 const FOLDERS_DIR   = path.join(__dirname, 'folders');
 const AUDIT_LOG     = path.join(__dirname, 'audit.log');
-const GROUPS_FILE    = path.join(__dirname, 'groups.json');
+const GROUPS_FILE   = path.join(__dirname, 'groups.json');
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+
+// --- MEMORY BASED RATE LIMITER FOR CRITICAL ENDPOINTS ---
+// Much stricter than the plugin-based rate limiter, can't be bypassed
+const ipRateLimiter = {
+  // Track attempts by IP
+  attempts: new Map(),
+  
+  // Track IPs that are temporarily banned
+  bannedIPs: new Map(),
+  
+  // Configure limits for different endpoints
+  limits: {
+    '/api/register': { max: 5, window: 60000 },         // 5 registrations per minute
+    '/api/login': { max: 10, window: 300000 },          // 10 login attempts per 5 minutes
+    '/api/login-with-otp': { max: 5, window: 300000 },  // 5 OTP login attempts per 5 minutes
+    '/api/request-otp': { max: 3, window: 300000 }      // 3 OTP requests per 5 minutes
+  },
+  
+  // Clean old records every 10 minutes
+  clean() {
+    const now = Date.now();
+    
+    // Clean attempts
+    for (const [ip, endpoints] of ipRateLimiter.attempts.entries()) {
+      for (const [endpoint, attempts] of Object.entries(endpoints)) {
+        // Remove expired attempts
+        const newAttempts = attempts.filter(timestamp => 
+          now - timestamp < (ipRateLimiter.limits[endpoint]?.window || 60000));
+        
+        if (newAttempts.length === 0) {
+          delete endpoints[endpoint];
+        } else {
+          endpoints[endpoint] = newAttempts;
+        }
+      }
+      
+      // Remove IPs with no endpoints
+      if (Object.keys(endpoints).length === 0) {
+        ipRateLimiter.attempts.delete(ip);
+      }
+    }
+    
+    // Clean banned IPs
+    for (const [ip, expiry] of ipRateLimiter.bannedIPs.entries()) {
+      if (now > expiry) {
+        ipRateLimiter.bannedIPs.delete(ip);
+      }
+    }
+  },
+  
+  // Check if a request should be allowed
+  check(req, reply) {
+    const ip = getClientIP(req);
+    const path = req.raw.url.split('?')[0];
+    const now = Date.now();
+    
+    // Skip check for health endpoint
+    if (path === '/api/health') {
+      return true;
+    }
+    
+    // Check if IP is banned in memory
+    if (ipRateLimiter.bannedIPs.has(ip)) {
+      const banExpiry = ipRateLimiter.bannedIPs.get(ip);
+      if (now < banExpiry) {
+        const remainingTime = Math.ceil((banExpiry - now) / 1000 / 60);
+        reply.code(429).send({
+          error: 'Too Many Requests',
+          message: `Your IP is temporarily blocked. Try again in ${remainingTime} minutes.`
+        });
+        return false;
+      } else {
+        ipRateLimiter.bannedIPs.delete(ip);
+      }
+    }
+    
+    // Skip rate limiting for non-sensitive endpoints
+    const matchedPath = Object.keys(ipRateLimiter.limits).find(p => path.startsWith(p));
+    if (!matchedPath) {
+      return true;
+    }
+    
+    // Initialize tracking for this IP if needed
+    if (!ipRateLimiter.attempts.has(ip)) {
+      ipRateLimiter.attempts.set(ip, {});
+    }
+    
+    const ipData = ipRateLimiter.attempts.get(ip);
+    if (!ipData[matchedPath]) {
+      ipData[matchedPath] = [];
+    }
+    
+    // Get attempts for this endpoint
+    const attempts = ipData[matchedPath];
+    const { max, window } = ipRateLimiter.limits[matchedPath];
+    
+    // Remove expired attempts
+    const validAttempts = attempts.filter(timestamp => now - timestamp < window);
+    
+    // Check if limit exceeded
+    if (validAttempts.length >= max) {
+      // If significantly over limit, ban temporarily
+      if (validAttempts.length >= max * 2) {
+        const banDuration = validAttempts.length >= max * 5 ? 3600000 : 600000; // 1 hour or 10 minutes
+        ipRateLimiter.bannedIPs.set(ip, now + banDuration);
+        
+        // Also add to MongoDB banned IPs collection for persistence
+        try {
+          bannedIpsColl.updateOne(
+            { ip },
+            { 
+              $set: {
+                ip,
+                reason: 'Automatic ban: Rate limit exceeded significantly',
+                bannedAt: new Date().toISOString(),
+                expiresAt: new Date(now + banDuration).toISOString(),
+                bannedBy: 'system'
+              }
+            },
+            { upsert: true }
+          );
+        } catch (err) {
+          fastify.log.error(`Failed to ban IP ${ip} in MongoDB: ${err.message}`);
+        }
+        
+        // Log ban action
+        try {
+          logActivity({ip, user: 'system'}, 'ip-auto-banned', { 
+            ip, 
+            endpoint: matchedPath,
+            attemptCount: validAttempts.length,
+            banDuration: banDuration / 60000 + ' minutes'
+          });
+        } catch (err) {
+          fastify.log.error(`Failed to log ban: ${err.message}`);
+        }
+        
+        const banMinutes = banDuration / 60000;
+        reply.code(429).send({
+          error: 'Too Many Requests',
+          message: `Rate limit exceeded significantly. Your IP has been blocked for ${banMinutes} minutes.`
+        });
+        return false;
+      }
+      
+      // Log rate limit action
+      try {
+        logActivity({ip, user: 'system'}, 'rate-limit-hit', { 
+          ip, 
+          endpoint: matchedPath,
+          attemptCount: validAttempts.length
+        });
+      } catch (err) {
+        fastify.log.error(`Failed to log rate limit: ${err.message}`);
+      }
+      
+      reply.code(429).send({
+        error: 'Too Many Requests',
+        message: `You've made too many requests. Please try again later.`
+      });
+      return false;
+    }
+    
+    // Record this attempt
+    validAttempts.push(now);
+    ipData[matchedPath] = validAttempts;
+    
+    return true;
+  }
+};
+
+// Clean rate limit data periodically
+setInterval(() => ipRateLimiter.clean(), 600000); // Every 10 minutes
 
 // --- PLUGINS ---
 fastify.register(require('@fastify/cors'),   { origin: '*', methods: ['GET','POST','PUT','DELETE'] });
@@ -110,7 +413,23 @@ fastify.register(require('@fastify/formbody'));
 fastify.register(require('@fastify/multipart'), { limits: { fileSize: MAX_FILE_SIZE, files: 1 } });
 fastify.register(require('@fastify/sensible'));
 fastify.register(require('@fastify/jwt'),     { secret: JWT_SECRET, sign: { expiresIn: TOKEN_EXPIRATION } });
-fastify.register(require('@fastify/rate-limit'), { max: RATE_LIMIT_MAX, timeWindow: RATE_LIMIT_WIN });
+
+// Configure rate limiting plugin for general protection
+fastify.register(require('@fastify/rate-limit'), {
+  global: true,
+  max: RATE_LIMIT_MAX,
+  timeWindow: RATE_LIMIT_WIN,
+  allowList: ['127.0.0.1', 'localhost'],  // Don't rate limit localhost
+  keyGenerator: (req) => getClientIP(req),
+  errorResponseBuilder: (req, context) => {
+    return {
+      statusCode: 429,
+      error: 'Too Many Requests',
+      message: `Rate limit exceeded. Try again in ${context.after}`,
+      expiresIn: context.after
+    };
+  }
+});
 
 // Serve static files without requiring ".html" in URLs
 fastify.register(require('@fastify/static'), {
@@ -118,6 +437,40 @@ fastify.register(require('@fastify/static'), {
   prefix: '/',
   index: false,
   extensions: ['html']
+});
+
+// --- MIDDLEWARE FOR BANNED IP CHECKING AND RATE LIMITING ---
+fastify.addHook('onRequest', async (req, reply) => {
+  const ip = getClientIP(req);
+  
+  try {
+    // Check MongoDB for banned IPs
+    const banned = await bannedIpsColl.findOne({ 
+      ip, 
+      expiresAt: { $gt: new Date().toISOString() } 
+    });
+    
+    if (banned && req.raw.url !== '/api/health') {
+      await logActivity({ip, user: 'banned'}, 'banned-ip-request-attempt', { 
+        ip, 
+        url: req.raw.url,
+        bannedUntil: banned.expiresAt 
+      });
+      
+      return reply.code(403).send({ 
+        error: 'Access Forbidden',
+        message: 'Your IP address has been temporarily blocked due to suspicious activity' 
+      });
+    }
+    
+    // Apply our custom strict rate limiter for critical endpoints
+    if (!ipRateLimiter.check(req, reply)) {
+      return; // Reply already sent by the rate limiter
+    }
+  } catch (err) {
+    fastify.log.error(`Error in IP security check: ${err.message}`);
+    // Continue processing the request even if the security check fails
+  }
 });
 
 // --- AUTH DECORATOR ---
@@ -969,6 +1322,442 @@ fastify.get('/api/view-file/:folderId/*', async (req, reply) => {
       }
       return reply.internalServerError('Failed to access file');
     }
+  }
+});
+
+// GET /api/v1/file/:fileId
+fastify.get('/api/v1/file/:fileId', async (req, reply) => {
+  try {
+    const { fileId } = req.params;
+    const apiKey = req.headers['x-api-key'];
+    const range = req.headers.range;
+
+    // Parse file ID
+    const [folderId, filename] = fileId.split(':', 2);
+    if (!folderId || !filename) {
+      return reply.code(400).send({ error: 'Invalid file ID format' });
+    }
+
+    // Load folder metadata
+    const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+    const meta = folders.find(f => f.folderId === folderId);
+    if (!meta) {
+      return reply.code(404).send({ error: 'Folder not found' });
+    }
+
+    // Check permissions for private folders
+    if (!meta.isPublic) {
+      const keyData = await validateApiKey(apiKey);
+      if (!keyData) {
+        return reply.code(401).send({ error: 'Invalid API key' });
+      }
+
+      // Check if user is owner or has permission
+      const hasAccess = meta.owner === keyData.username || 
+                       (meta.permissions && 
+                        meta.permissions[keyData.username] && 
+                        meta.permissions[keyData.username].download);
+
+      if (!hasAccess) {
+        return reply.code(403).send({ error: 'Access denied' });
+      }
+
+      // Update usage count
+      await apiKeysColl.updateOne(
+        { _id: keyData._id },
+        { $inc: { usageCount: 1 } }
+      );
+    }
+
+    // Get file metadata from S3
+    const key = `folders/${folderId}/${filename}`;
+    let headRes;
+    try {
+      headRes = await s3.send(new HeadObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Key: key
+      }));
+    } catch (err) {
+      if (err.name === 'NotFound' || err.name === 'NoSuchKey') {
+        return reply.code(404).send({ error: 'File not found' });
+      }
+      throw err;
+    }
+
+    // Determine MIME type and content disposition
+    const mimeType = mime.lookup(filename) || 'application/octet-stream';
+    const totalSize = headRes.ContentLength;
+    const fileExtension = path.extname(filename).toLowerCase();
+    
+    // Determine if file should be displayed inline or downloaded
+    const inlineTypes = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.mp4', '.webm', '.mp3', '.wav'];
+    const shouldDisplayInline = inlineTypes.includes(fileExtension);
+    const disposition = shouldDisplayInline ? 'inline' : 'attachment';
+
+    // Handle range requests for partial content
+    let rangeStart = 0;
+    let rangeEnd = totalSize - 1;
+    let isRangeRequest = false;
+
+    if (range && totalSize > 0) {
+      const rangeMatch = /bytes=(\d+)-(\d*)/.exec(range);
+      if (rangeMatch) {
+        rangeStart = parseInt(rangeMatch[1], 10);
+        if (rangeMatch[2]) {
+          rangeEnd = Math.min(parseInt(rangeMatch[2], 10), totalSize - 1);
+        }
+        
+        // Validate range
+        if (rangeStart >= totalSize || rangeStart > rangeEnd) {
+          return reply
+            .code(416)
+            .header('Content-Range', `bytes */${totalSize}`)
+            .send({ error: 'Range not satisfiable' });
+        }
+        
+        isRangeRequest = true;
+      }
+    }
+
+    // Get file content from S3
+    const getObjectParams = {
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: key
+    };
+
+    if (isRangeRequest) {
+      getObjectParams.Range = `bytes=${rangeStart}-${rangeEnd}`;
+    }
+
+    const s3Response = await s3.send(new GetObjectCommand(getObjectParams));
+    
+    // Convert S3 stream to Node.js readable stream
+    const stream = s3Response.Body;
+
+    // Handle stream errors
+    stream.on('error', (err) => {
+      fastify.log.error('Stream error while serving file:', {
+        error: err.message,
+        stack: err.stack,
+        fileId: req.params.fileId,
+        key,
+        rangeStart,
+        rangeEnd
+      });
+      // Don't need to send response here as fastify will handle it
+    });
+
+    // Set response headers
+    const responseHeaders = {
+      'Content-Type': mimeType,
+      'Content-Disposition': `${disposition}; filename="${encodeURIComponent(filename)}"`,
+      'Cache-Control': 'public, max-age=3600',
+      'ETag': headRes.ETag,
+      'Last-Modified': headRes.LastModified
+    };
+
+    if (isRangeRequest) {
+      responseHeaders['Accept-Ranges'] = 'bytes';
+      responseHeaders['Content-Range'] = `bytes ${rangeStart}-${rangeEnd}/${totalSize}`;
+      responseHeaders['Content-Length'] = rangeEnd - rangeStart + 1;
+    } else {
+      responseHeaders['Content-Length'] = totalSize;
+      responseHeaders['Accept-Ranges'] = 'bytes';
+    }
+
+    // Handle conditional requests (If-None-Match, If-Modified-Since)
+    const ifNoneMatch = req.headers['if-none-match'];
+    const ifModifiedSince = req.headers['if-modified-since'];
+
+    if (ifNoneMatch === headRes.ETag || 
+        (ifModifiedSince && new Date(ifModifiedSince) >= new Date(headRes.LastModified))) {
+      return reply.code(304).headers(responseHeaders).send();
+    }
+
+    // Send the response
+    return reply
+      .code(isRangeRequest ? 206 : 200)
+      .headers(responseHeaders)
+      .send(stream);
+
+  } catch (err) {
+    fastify.log.error('Error serving file:', {
+      error: err.message,
+      stack: err.stack,
+      fileId: req.params.fileId,
+      key: `folders/${folderId}/${filename}`,
+      s3Error: err.name,
+      s3Code: err.$metadata?.httpStatusCode,
+      s3RequestId: err.$metadata?.requestId
+    });
+    
+    if (err.name === 'NoSuchKey' || err.name === 'NotFound') {
+      return reply.code(404).send({ error: 'File not found' });
+    }
+    
+    return reply.code(500).send({ error: 'Failed to serve file' });
+  }
+});
+
+
+// GET /api/v1/folder/:folderId
+fastify.get('/api/v1/folder/:folderId', async (req, reply) => {
+  try {
+    const { folderId } = req.params;
+    const apiKey = req.headers['x-api-key'];
+
+    const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+    const folder = folders.find(f => f.folderId === folderId);
+    if (!folder) {
+      return reply.notFound('Folder not found');
+    }
+
+    // If folder is not public, validate API key
+    if (!folder.isPublic) {
+      // Validate API key
+      const keyData = await validateApiKey(apiKey);
+      if (!keyData) {
+        return reply.code(401).send({ error: 'Invalid API key' });
+      }
+
+      // Check if user has access (owner or has permission)
+      const hasAccess = folder.owner === keyData.username || 
+                       (folder.permissions && 
+                        folder.permissions[keyData.username] && 
+                        folder.permissions[keyData.username].download);
+
+      if (!hasAccess) {
+        return reply.forbidden('Access denied');
+      }
+
+      // Update API key usage
+      await apiKeysColl.updateOne(
+        { _id: keyData._id },
+        { $inc: { usageCount: 1 } }
+      );
+    }
+
+    // List files in the folder
+    const data = await s3.send(new ListObjectsV2Command({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Prefix: `folders/${folderId}/`
+    }));
+
+    const files = (data.Contents || []).map(obj => {
+      const filename = obj.Key.slice(`folders/${folderId}/`.length);
+      if (!filename) return null; // Skip folder "files"
+      
+      return {
+        id: `${folderId}:${filename}`,
+        name: filename,
+        size: obj.Size,
+        type: mime.lookup(filename) || 'application/octet-stream',
+        lastModified: obj.LastModified.toISOString(),
+        url: `https://hackclub.maksimmalbasa.in.rs/api/v1/file/${folderId}:${filename}`
+      };
+    }).filter(Boolean);
+
+    return reply.send({
+      folderId,
+      files
+    });
+  } catch (err) {
+    fastify.log.error('Error listing folder:', err);
+    return reply.internalServerError('Failed to list folder');
+  }
+});
+
+// GET /api/v1/latest/:folderId
+fastify.get('/api/v1/latest/:folderId', async (req, reply) => {
+  try {
+    const { folderId } = req.params;
+    const apiKey = req.headers['x-api-key'];
+    
+    // Validate API key
+    const keyData = await validateApiKey(apiKey);
+    if (!keyData) {
+      return reply.code(401).send({ error: 'Invalid API key' });
+    }
+
+    const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+    const folder = folders.find(f => f.folderId === folderId);
+    if (!folder) {
+      return reply.notFound('Folder not found');
+    }
+
+    // Check if folder is public or user has access
+    if (!folder.isPublic) {
+      const hasAccess = folder.owner === keyData.username || 
+                       (folder.permissions && 
+                        folder.permissions[keyData.username] && 
+                        folder.permissions[keyData.username].download);
+
+      if (!hasAccess) {
+        return reply.forbidden('Access denied');
+      }
+    }
+
+    // List files in the folder
+    const data = await s3.send(new ListObjectsV2Command({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Prefix: `folders/${folderId}/`
+    }));
+
+    if (!data.Contents || data.Contents.length === 0) {
+      return reply.notFound('No files in folder');
+    }
+
+    // Find the most recently modified file
+    const latestFile = data.Contents
+      .filter(obj => obj.Key !== `folders/${folderId}/`) // Skip folder "file"
+      .sort((a, b) => b.LastModified - a.LastModified)[0];
+
+    const filename = latestFile.Key.slice(`folders/${folderId}/`.length);
+    
+    // Update API key usage
+    await apiKeysColl.updateOne(
+      { _id: keyData._id },
+      { $inc: { usageCount: 1 } }
+    );
+
+    return reply.send({
+      id: `${folderId}:${filename}`,
+      name: filename,
+      size: latestFile.Size,
+      type: mime.lookup(filename) || 'application/octet-stream',
+      lastModified: latestFile.LastModified.toISOString(),
+      url: `https://hackclub.maksimmalbasa.in.rs/api/v1/file/${folderId}:${filename}`
+    });
+  } catch (err) {
+    fastify.log.error('Error getting latest file:', err);
+    return reply.internalServerError('Failed to get latest file');
+  }
+});
+
+// POST /api/v1/upload
+fastify.post('/api/v1/upload', async (req, reply) => {
+  try {
+    const apiKey = req.headers['x-api-key'];
+    const folderId = req.query.folderId;
+    
+    if (!folderId) {
+      return reply.badRequest('folderId query parameter is required');
+    }
+
+    // Validate API key
+    const keyData = await validateApiKey(apiKey);
+    if (!keyData) {
+      return reply.code(401).send({ error: 'Invalid API key' });
+    }
+
+    const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+    const folder = folders.find(f => f.folderId === folderId);
+    if (!folder) {
+      return reply.notFound('Folder not found');
+    }
+
+    // Check if user has upload permission
+    const hasUploadAccess = folder.owner === keyData.username || 
+                           (folder.permissions && 
+                            folder.permissions[keyData.username] && 
+                            folder.permissions[keyData.username].upload);
+
+    if (!hasUploadAccess) {
+      return reply.forbidden('No upload permission');
+    }
+
+    const uploadedFiles = [];
+    const files = await req.files();
+
+    for await (const file of files) {
+      if (file.file.truncated) {
+        return reply.entityTooLarge('File too large');
+      }
+
+      const filename = `${Date.now()}-${file.filename}`;
+      const fileBuffer = await file.toBuffer();
+
+      await s3.send(new PutObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Key: `folders/${folderId}/${filename}`,
+        Body: fileBuffer,
+        ContentType: file.mimetype || mime.lookup(filename) || 'application/octet-stream',
+        ContentLength: fileBuffer.length
+      }));
+
+      uploadedFiles.push({
+        id: `${folderId}:${filename}`,
+        name: filename,
+        size: fileBuffer.length,
+        type: file.mimetype || mime.lookup(filename) || 'application/octet-stream',
+        url: `https://hackclub.maksimmalbasa.in.rs/api/v1/file/${folderId}:${filename}`
+      });
+    }
+
+    // Update API key usage
+    await apiKeysColl.updateOne(
+      { _id: keyData._id },
+      { $inc: { usageCount: 1 } }
+    );
+
+    return reply.send({ files: uploadedFiles });
+  } catch (err) {
+    fastify.log.error('Error uploading files:', err);
+    return reply.internalServerError('Failed to upload files');
+  }
+});
+
+// GET /api/v1/usage
+fastify.get('/api/v1/usage', async (req, reply) => {
+  try {
+    const apiKey = req.headers['x-api-key'];
+    
+    // Validate API key
+    const keyData = await validateApiKey(apiKey);
+    if (!keyData) {
+      return reply.code(401).send({ error: 'Invalid API key' });
+    }
+
+    // Get all folders owned by the API key user
+    const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+    const userFolders = folders.filter(f => f.owner === keyData.userId);
+
+    // Calculate total storage usage
+    let totalSize = 0;
+    let totalFiles = 0;
+
+    for (const folder of userFolders) {
+      const data = await s3.send(new ListObjectsV2Command({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Prefix: `folders/${folder.folderId}/`
+      }));
+
+      if (data.Contents) {
+        totalFiles += data.Contents.length;
+        totalSize += data.Contents.reduce((sum, obj) => sum + obj.Size, 0);
+      }
+    }
+
+    // Update API key usage
+    await apiKeysColl.updateOne(
+      { _id: keyData._id },
+      { $inc: { usageCount: 1 } }
+    );
+
+    return reply.send({
+      apiKey: {
+        created: keyData.created,
+        lastUsed: keyData.lastUsed,
+        totalRequests: keyData.usageCount
+      },
+      storage: {
+        files: totalFiles,
+        totalSize
+      }
+    });
+  } catch (err) {
+    fastify.log.error('Error getting usage stats:', err);
+    return reply.internalServerError('Failed to get usage stats');
   }
 });
 
@@ -3337,3 +4126,6 @@ const start = async () => {
 };
 
 start();
+
+// --- API V1 ENDPOINTS ---
+

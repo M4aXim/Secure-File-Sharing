@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FileShare API Documentation</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@1/css/pico.min.css">
+    <style>
+        :root {
+            --primary: #1e88e5;
+            --primary-hover: #1976d2;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .endpoint {
+            margin: 2rem 0;
+            padding: 1.5rem;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+        
+        .method {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-right: 1rem;
+        }
+        
+        .get { background: #e3f2fd; color: #1565c0; }
+        .post { background: #e8f5e9; color: #2e7d32; }
+        .delete { background: #ffebee; color: #c62828; }
+        
+        code {
+            background: #2b2b2b;
+            color: #fff;
+            padding: 1rem;
+            border-radius: 4px;
+            display: block;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        
+        .rate-limit {
+            background: #fff3e0;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+        
+        .steps {
+            counter-reset: step;
+        }
+        
+        .step {
+            margin: 2rem 0;
+            padding-left: 3rem;
+            position: relative;
+        }
+        
+        .step::before {
+            counter-increment: step;
+            content: counter(step);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 2rem;
+            height: 2rem;
+            background: var(--primary);
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <nav class="container">
+        <ul>
+            <li><strong>FileShare API</strong></li>
+        </ul>
+        <ul>
+            <li><a href="#getting-started">Getting Started</a></li>
+            <li><a href="#endpoints">Endpoints</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
+        <h1>FileShare API Documentation</h1>
+        <p>
+            FileShare now provides a powerful API that allows you to use the platform as a CDN and file storage service.
+            This documentation will help you get started with using the API.
+        </p>
+
+        <section id="getting-started">
+            <h2>Getting Started</h2>
+            <div class="steps">
+                <div class="step">
+                    <h3>Log into your account</h3>
+                    <p>Sign in to your FileShare account. If you don't have one, you'll need to create an account first.</p>
+                </div>
+                
+                <div class="step">
+                    <h3>Generate an API key</h3>
+                    <p>Go to your dashboard and click on "API Keys" in the navigation menu. Click "Generate New Key" and provide a description for your key.</p>
+                </div>
+                
+                <div class="step">
+                    <h3>Save your API key</h3>
+                    <p>Copy and securely store your API key. You won't be able to see it again after leaving the page.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="authentication">
+            <h2>Authentication</h2>
+            <p>Include your API key in the <code>X-API-Key</code> header with every request to access private folders:</p>
+            <code>
+X-API-Key: your-api-key-here
+            </code>
+            <p><strong>Note:</strong> Public folders can be accessed without an API key.</p>
+        </section>
+
+        <section id="rate-limits">
+            <h2>Rate Limits</h2>
+            <div class="rate-limit">
+                <h4>Default Rate Limits:</h4>
+                <ul>
+                    <li>General endpoints: 100 requests per minute</li>
+                    <li>Upload endpoints: 10 uploads per minute</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="endpoints">
+            <h2>API Endpoints</h2>
+
+            <div class="endpoint">
+                <span class="method get">GET</span>
+                <strong>/api/v1/file/:fileId</strong>
+                <p>Retrieve a file by its ID. Files are displayed inline in the browser when possible (images, PDFs, videos, etc). No API key is required for files in public folders.</p>
+                <h4>Response Headers:</h4>
+                <ul>
+                    <li>Cache-Control: public, max-age=31536000</li>
+                    <li>Content-Type: [file mime type]</li>
+                    <li>Content-Length: [file size]</li>
+                    <li>Content-Disposition: inline</li>
+                </ul>
+            </div>
+
+            <div class="endpoint">
+                <span class="method get">GET</span>
+                <strong>/api/v1/folder/:folderId</strong>
+                <p>List all files in a folder. No API key is required for public folders.</p>
+                <h4>Response:</h4>
+                <code>
+{
+    "folderId": "folder-id",
+    "files": [
+        {
+            "id": "file-id",
+            "name": "example.jpg",
+            "size": 12345,
+            "type": "image/jpeg",
+            "lastModified": "2024-03-20T12:00:00Z",
+            "url": "https://hackclub.maksimmalbasa.in.rs/api/v1/file/file-id"
+        }
+    ]
+}
+                </code>
+            </div>
+
+            <div class="endpoint">
+                <span class="method get">GET</span>
+                <strong>/api/v1/latest/:folderId</strong>
+                <p>Get the most recently modified file in a folder. No API key is required for public folders.</p>
+                <h4>Response:</h4>
+                <code>
+{
+    "id": "file-id",
+    "name": "latest.jpg",
+    "size": 12345,
+    "type": "image/jpeg",
+    "lastModified": "2024-03-20T12:00:00Z",
+    "url": "https://hackclub.maksimmalbasa.in.rs/api/v1/file/file-id"
+}
+                </code>
+            </div>
+
+            <div class="endpoint">
+                <span class="method post">POST</span>
+                <strong>/api/v1/upload</strong>
+                <p>Upload one or more files.</p>
+                <h4>Request:</h4>
+                <p>Send files using multipart/form-data</p>
+                <h4>Response:</h4>
+                <code>
+{
+    "files": [
+        {
+            "id": "file-id",
+            "name": "uploaded.jpg",
+            "size": 12345,
+            "type": "image/jpeg",
+            "url": "https://hackclub.maksimmalbasa.in.rs/api/v1/file/file-id"
+        }
+    ]
+}
+                </code>
+            </div>
+
+            <div class="endpoint">
+                <span class="method get">GET</span>
+                <strong>/api/v1/usage</strong>
+                <p>Get API usage statistics.</p>
+                <h4>Response:</h4>
+                <code>
+{
+    "apiKey": {
+        "created": "2024-03-20T12:00:00Z",
+        "lastUsed": "2024-03-20T12:30:00Z",
+        "totalRequests": 150
+    },
+    "storage": {
+        "files": 25,
+        "totalSize": 1234567
+    }
+}
+                </code>
+            </div>
+
+    </main>
+
+    <footer class="container">
+        <hr>
+        <p>
+            Need help? Contact our support team or visit our
+            <a href="https://github.com/M4aXim/Secure-File-Sharing">GitHub repository</a>.
+        </p>
+    </footer>
+</body>
+</html> 

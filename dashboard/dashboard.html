@@ -900,9 +900,417 @@
         grid-template-columns: 1fr;
       }
     }
+
+    /* API Keys Section Styles */
+    #apiKeysSection {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+    }
+
+    .section-header h2 {
+      font-size: 28px;
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    .new-key-btn {
+      background: linear-gradient(135deg, var(--primary-blue) 0%, var(--primary-dark) 100%);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      font-weight: 500;
+      font-size: 15px;
+      box-shadow: 0 4px 12px rgba(26, 115, 232, 0.2);
+    }
+
+    .new-key-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(26, 115, 232, 0.3);
+    }
+
+    .new-key-btn i {
+      font-size: 16px;
+    }
+
+    .api-keys-container {
+      display: grid;
+      gap: 32px;
+    }
+
+    .api-key-info {
+      background: linear-gradient(145deg, #ffffff, #f8faff);
+      border-radius: 16px;
+      padding: 32px;
+      border: 1px solid rgba(26, 115, 232, 0.1);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
+    }
+
+    .api-key-info h3 {
+      color: var(--primary-blue);
+      font-size: 20px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .api-key-info h3::before {
+      content: '';
+      display: block;
+      width: 4px;
+      height: 24px;
+      background: var(--primary-blue);
+      border-radius: 2px;
+    }
+
+    .api-key-info p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+
+    .api-key-info ul {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .api-key-info li {
+      color: var(--text-secondary);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: white;
+      border-radius: 8px;
+      border: 1px solid var(--border-light);
+      transition: all 0.3s ease;
+    }
+
+    .api-key-info li:hover {
+      transform: translateX(4px);
+      border-color: var(--primary-blue);
+      background: var(--primary-light);
+    }
+
+    .api-key-info li::before {
+      content: '→';
+      color: var(--primary-blue);
+      font-weight: bold;
+    }
+
+    #apiKeysList {
+      display: grid;
+      gap: 20px;
+    }
+
+    .api-key-item {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+      border: 1px solid var(--border-light);
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .api-key-item::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: var(--primary-blue);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .api-key-item:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+
+    .api-key-item:hover::before {
+      opacity: 1;
+    }
+
+    .api-key-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .api-key-description {
+      font-weight: 600;
+      font-size: 16px;
+      color: var(--text-primary);
+    }
+
+    .api-key-created {
+      color: var(--text-secondary);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .api-key-created i {
+      font-size: 14px;
+      color: var(--primary-blue);
+    }
+
+    .api-key-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .api-key-stat {
+      padding: 16px;
+      background: var(--primary-light);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .stat-label {
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    .stat-value {
+      color: var(--text-primary);
+      font-size: 15px;
+      font-weight: 500;
+    }
+
+    .delete-key-btn {
+      background: #fff1f0;
+      color: #ff4d4f;
+      border: 1px solid #ffccc7;
+      border-radius: 8px;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.3s ease;
+    }
+
+    .delete-key-btn:hover {
+      background: #ff4d4f;
+      color: white;
+      border-color: #ff4d4f;
+      transform: translateY(-2px);
+    }
+
+    /* API Key Modal Styles */
+    .modal-content {
+      max-width: 560px;
+      width: 90%;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    .modal-header h2 {
+      font-size: 24px;
+      color: var(--primary-blue);
+      margin: 0;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: all 0.3s ease;
+    }
+
+    .close-btn:hover {
+      background: var(--primary-light);
+      color: var(--primary-blue);
+    }
+
+    .key-value {
+      background: var(--primary-light);
+      padding: 20px;
+      border-radius: 12px;
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 14px;
+      color: var(--primary-blue);
+      word-break: break-all;
+      margin: 24px 0;
+      position: relative;
+      border: 1px solid rgba(26, 115, 232, 0.2);
+    }
+
+    .copy-btn {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: white;
+      border: 1px solid var(--primary-blue);
+      color: var(--primary-blue);
+      border-radius: 6px;
+      padding: 8px 16px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .copy-btn:hover {
+      background: var(--primary-blue);
+      color: white;
+    }
+
+    .api-key-example {
+      background: #1e1e1e;
+      border-radius: 12px;
+      padding: 24px;
+      margin-top: 24px;
+    }
+
+    .api-key-example h4 {
+      color: #e0e0e0;
+      margin-bottom: 16px;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .api-key-example h4 i {
+      color: #64d2ff;
+    }
+
+    .api-key-example pre {
+      margin: 0;
+      white-space: pre-wrap;
+    }
+
+    .api-key-example code {
+      color: #e0e0e0;
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    /* Notification System */
+    .notification {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 16px 24px;
+      border-radius: 12px;
+      background: white;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transform: translateY(150%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 9999;
+      max-width: 400px;
+    }
+
+    .notification.show {
+      transform: translateY(0);
+    }
+
+    .notification.success {
+      border-left: 4px solid #0f9d58;
+    }
+
+    .notification.error {
+      border-left: 4px solid #dc3545;
+    }
+
+    .notification i {
+      font-size: 20px;
+    }
+
+    .notification.success i {
+      color: #0f9d58;
+    }
+
+    .notification.error i {
+      color: #dc3545;
+    }
+
+    .notification-message {
+      color: var(--text-primary);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .notification-close {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      cursor: pointer;
+      padding: 4px;
+      font-size: 16px;
+      opacity: 0.7;
+      transition: opacity 0.2s ease;
+    }
+
+    .notification-close:hover {
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
+  <!-- Add this right after the body tag -->
+  <div id="notification" class="notification">
+    <i class="fas"></i>
+    <span class="notification-message"></span>
+    <button class="notification-close" onclick="hideNotification()">
+      <i class="fas fa-times"></i>
+    </button>
+  </div>
+
   <!-- SIDEBAR -->
   <aside class="sidebar">
     <div class="sidebar-logo">
@@ -932,6 +1340,12 @@
       <div class="nav-item" id="groupsNav" onclick="window.location.href='/dashboard/groups.html'">
         <span class="icon"><i class="fas fa-users"></i></span>
         <span>Group Management</span>
+      </div>
+    </div>
+    
+      <div class="nav-item" onclick="showApiKeys()">
+        <i class="icon fas fa-key"></i>
+        API Keys
       </div>
     </div>
     
@@ -978,6 +1392,91 @@
       <i class="fas fa-folder-open"></i>
       <h3>No folders yet</h3>
       <p>Create your first folder to get started with organizing your files</p>
+    </div>
+
+    <!-- API Keys Section -->
+    <div id="apiKeysSection" class="content-section" style="display: none;">
+      <div class="section-header">
+        <h2>API Keys</h2>
+        <button class="new-key-btn" onclick="showApiKeyModal()">
+          <i class="fas fa-plus"></i>
+          Generate New API Key
+        </button>
+      </div>
+
+      <div class="api-keys-container">
+        <div class="api-key-info">
+          <h3>API Access</h3>
+          <p>API keys allow you to use FileShare as a CDN and programmatically upload files. Each key has:</p>
+          <ul>
+            <li>Rate limit of 100 requests per minute for general endpoints</li>
+            <li>Rate limit of 10 uploads per minute</li>
+            <li>Automatic request caching for better performance</li>
+          </ul>
+        </div>
+
+        <div id="apiKeysList">
+          <!-- API keys will be listed here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- API Key Generation Modal -->
+    <div class="modal" id="generateApiKeyModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Generate New API Key</h2>
+          <button class="close-btn" onclick="hideApiKeyModal()">×</button>
+        </div>
+        
+        <div id="apiKeyStep1">
+          <div class="modal-input-group">
+            <label for="apiKeyDescription">Description</label>
+            <input type="text" class="modal-input" id="apiKeyDescription" 
+                   placeholder="e.g., Development API Key, Production CDN">
+            <div class="error-message" id="apiKeyError"></div>
+          </div>
+          
+          <p class="modal-info">
+            This API key will allow you to:
+            <ul>
+              <li>Upload files programmatically</li>
+              <li>Use FileShare as a CDN</li>
+              <li>Access your files via API</li>
+            </ul>
+          </p>
+          
+          <div class="modal-buttons">
+            <button class="modal-button cancel" onclick="hideApiKeyModal()">Cancel</button>
+            <button class="modal-button submit" onclick="submitApiKeyGeneration()">Generate Key</button>
+          </div>
+        </div>
+        
+        <div id="apiKeyStep2" style="display: none;">
+          <div class="success-message">
+            <i class="fas fa-key"></i>
+            <h3>Your New API Key</h3>
+            <p>Copy this key now. For security reasons, you won't be able to see it again!</p>
+            
+            <div class="api-key-display">
+              <div class="key-value" id="newApiKeyValue"></div>
+              <button class="copy-btn" onclick="copyNewApiKey()">
+                <i class="fas fa-copy"></i> Copy to Clipboard
+              </button>
+            </div>
+
+            <div class="api-key-example">
+              <h4>Example Usage</h4>
+              <pre><code>curl -X GET "https://hackclub.maksimmalbasa.in.rs/api/v1/folder/:folderId" \
+     -H "X-API-Key: your-api-key-here"</code></pre>
+            </div>
+          </div>
+          
+          <div class="modal-buttons">
+            <button class="modal-button submit" onclick="hideApiKeyModal()">Done</button>
+          </div>
+        </div>
+      </div>
     </div>
   </main>
 
@@ -1079,5 +1578,195 @@
   </div>
 
   <script src="/javascript/dashboard.js"></script>
+  <script>
+    async function showApiKeys() {
+      // Update active state
+      document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+      document.querySelector('.nav-item:nth-child(3)').classList.add('active');
+      
+      // Hide other sections and show API keys section
+      document.querySelectorAll('.content-section').forEach(section => section.style.display = 'none');
+      document.getElementById('apiKeysSection').style.display = 'block';
+      
+      // Load API keys
+      await loadApiKeys();
+    }
+
+    async function loadApiKeys() {
+      try {
+        const response = await fetch('/api/v1/keys', {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('jwtToken')}`
+          }
+        });
+        
+        if (!response.ok) throw new Error('Failed to load API keys');
+        
+        const data = await response.json();
+        const keysList = document.getElementById('apiKeysList');
+        keysList.innerHTML = '';
+        
+        if (data.keys.length === 0) {
+          keysList.innerHTML = `
+            <div class="empty-state">
+              <i class="fas fa-key"></i>
+              <h3>No API Keys</h3>
+              <p>Generate your first API key to get started with the API</p>
+            </div>
+          `;
+          return;
+        }
+        
+        data.keys.forEach(key => {
+          const keyElement = document.createElement('div');
+          keyElement.className = 'api-key-item';
+          keyElement.innerHTML = `
+            <div class="api-key-header">
+              <div class="api-key-description">${key.description}</div>
+              <div class="api-key-created">
+                <i class="fas fa-calendar"></i>
+                Created: ${new Date(key.created).toLocaleDateString()}
+              </div>
+            </div>
+            <div class="api-key-stats">
+              <div class="api-key-stat">
+                <div class="stat-label">Last Used</div>
+                <div class="stat-value">
+                  <i class="fas fa-clock"></i>
+                  ${key.lastUsed ? new Date(key.lastUsed).toLocaleString() : 'Never'}
+                </div>
+              </div>
+              <div class="api-key-stat">
+                <div class="stat-label">Total Requests</div>
+                <div class="stat-value">
+                  <i class="fas fa-chart-bar"></i>
+                  ${key.usageCount || 0}
+                </div>
+              </div>
+            </div>
+            <button class="delete-key-btn" onclick="revokeApiKey('${key._id}')">
+              <i class="fas fa-trash"></i>
+              Revoke Key
+            </button>
+          `;
+          keysList.appendChild(keyElement);
+        });
+      } catch (error) {
+        console.error('Error loading API keys:', error);
+        showNotification('Failed to load API keys', 'error');
+      }
+    }
+
+    function showApiKeyModal() {
+      document.getElementById('generateApiKeyModal').style.display = 'flex';
+      document.getElementById('apiKeyStep1').style.display = 'block';
+      document.getElementById('apiKeyStep2').style.display = 'none';
+      document.getElementById('apiKeyDescription').value = '';
+      document.getElementById('apiKeyError').style.display = 'none';
+    }
+
+    function hideApiKeyModal() {
+      document.getElementById('generateApiKeyModal').style.display = 'none';
+      loadApiKeys(); // Refresh the keys list
+    }
+
+    async function submitApiKeyGeneration() {
+      const description = document.getElementById('apiKeyDescription').value.trim();
+      const errorElement = document.getElementById('apiKeyError');
+      
+      if (!description) {
+        errorElement.textContent = 'Please enter a description for your API key';
+        errorElement.style.display = 'block';
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/v1/keys', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('jwtToken')}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ description })
+        });
+        
+        if (!response.ok) throw new Error('Failed to generate API key');
+        
+        const data = await response.json();
+        
+        // Show the new key
+        document.getElementById('apiKeyStep1').style.display = 'none';
+        document.getElementById('apiKeyStep2').style.display = 'block';
+        document.getElementById('newApiKeyValue').textContent = data.key;
+        
+        showNotification('API key generated successfully', 'success');
+      } catch (error) {
+        console.error('Error generating API key:', error);
+        errorElement.textContent = 'Failed to generate API key. Please try again.';
+        errorElement.style.display = 'block';
+      }
+    }
+
+    function copyNewApiKey() {
+      const keyElement = document.getElementById('newApiKeyValue');
+      navigator.clipboard.writeText(keyElement.textContent).then(() => {
+        showNotification('API key copied to clipboard!', 'success');
+      }).catch(err => {
+        console.error('Failed to copy:', err);
+        showNotification('Failed to copy API key', 'error');
+      });
+    }
+
+    async function revokeApiKey(keyId) {
+      if (!confirm('Are you sure you want to revoke this API key? This action cannot be undone.')) {
+        return;
+      }
+      
+      try {
+        const response = await fetch(`/api/v1/keys/${keyId}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('jwtToken')}`
+          }
+        });
+        
+        if (!response.ok) throw new Error('Failed to revoke API key');
+        
+        showNotification('API key revoked successfully', 'success');
+        await loadApiKeys();
+      } catch (error) {
+        console.error('Error revoking API key:', error);
+        showNotification('Failed to revoke API key', 'error');
+      }
+    }
+
+    function showNotification(message, type = 'success') {
+      const notification = document.getElementById('notification');
+      const icon = notification.querySelector('i');
+      const messageEl = notification.querySelector('.notification-message');
+      
+      // Reset classes
+      notification.classList.remove('success', 'error');
+      icon.classList.remove('fa-check-circle', 'fa-exclamation-circle');
+      
+      // Add appropriate classes
+      notification.classList.add(type);
+      icon.classList.add(type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle');
+      
+      // Set message
+      messageEl.textContent = message;
+      
+      // Show notification
+      notification.classList.add('show');
+      
+      // Hide after 5 seconds
+      setTimeout(hideNotification, 5000);
+    }
+
+    function hideNotification() {
+      const notification = document.getElementById('notification');
+      notification.classList.remove('show');
+    }
+  </script>
 </body>
 </html>

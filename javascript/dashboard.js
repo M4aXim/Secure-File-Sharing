@@ -759,3 +759,193 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('generalGroupError').style.display = 'block';
     }
   }
+
+  // API Key Management Functions
+  async function showApiKeys() {
+    // Update active state
+    document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
+    document.querySelector('.nav-item:nth-child(3)').classList.add('active');
+    
+    // Hide other sections and show API keys section
+    document.querySelectorAll('.content-section').forEach(section => section.style.display = 'none');
+    document.getElementById('apiKeysSection').style.display = 'block';
+    
+    // Update page title
+    document.querySelector('.page-title').textContent = 'API Keys';
+    
+    // Load API keys
+    await loadApiKeys();
+  }
+
+  async function loadApiKeys() {
+    try {
+      const token = localStorage.getItem('jwtToken');
+      if (!token) {
+        window.location.href = '/index.html';
+        return;
+      }
+
+      const response = await fetch('/api/v1/keys', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          localStorage.removeItem('jwtToken');
+          window.location.href = '/index.html';
+          return;
+        }
+        throw new Error('Failed to load API keys');
+      }
+      
+      const data = await response.json();
+      const keysList = document.getElementById('apiKeysList');
+      keysList.innerHTML = '';
+      
+      if (data.keys.length === 0) {
+        keysList.innerHTML = `
+          <div class="empty-state">
+            <i class="fas fa-key"></i>
+            <h3>No API Keys</h3>
+            <p>Generate your first API key to get started with the API</p>
+          </div>
+        `;
+        return;
+      }
+      
+      data.keys.forEach(key => {
+        const keyElement = document.createElement('div');
+        keyElement.className = 'api-key-item';
+        keyElement.innerHTML = `
+          <div class="api-key-header">
+            <div class="api-key-description">${key.description}</div>
+            <div class="api-key-created">Created: ${new Date(key.created).toLocaleDateString()}</div>
+          </div>
+          <div class="api-key-stats">
+            <div>Last used: ${key.lastUsed ? new Date(key.lastUsed).toLocaleString() : 'Never'}</div>
+            <div>Total requests: ${key.usageCount || 0}</div>
+          </div>
+          <button class="delete-key-btn" onclick="revokeApiKey('${key._id}')">
+            <i class="fas fa-trash"></i> Revoke
+          </button>
+        `;
+        keysList.appendChild(keyElement);
+      });
+    } catch (error) {
+      console.error('Error loading API keys:', error);
+      showNotification('Failed to load API keys', 'error');
+    }
+  }
+
+  function showApiKeyModal() {
+    document.getElementById('generateApiKeyModal').style.display = 'flex';
+    document.getElementById('apiKeyStep1').style.display = 'block';
+    document.getElementById('apiKeyStep2').style.display = 'none';
+    document.getElementById('apiKeyDescription').value = '';
+    document.getElementById('apiKeyError').style.display = 'none';
+  }
+
+  function hideApiKeyModal() {
+    document.getElementById('generateApiKeyModal').style.display = 'none';
+    loadApiKeys(); // Refresh the keys list
+  }
+
+  async function submitApiKeyGeneration() {
+    const description = document.getElementById('apiKeyDescription').value.trim();
+    const errorElement = document.getElementById('apiKeyError');
+    
+    if (!description) {
+      errorElement.textContent = 'Please enter a description for your API key';
+      errorElement.style.display = 'block';
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('jwtToken');
+      if (!token) {
+        window.location.href = '/index.html';
+        return;
+      }
+
+      const response = await fetch('/api/v1/keys', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ description })
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          localStorage.removeItem('jwtToken');
+          window.location.href = '/index.html';
+          return;
+        }
+        throw new Error('Failed to generate API key');
+      }
+      
+      const data = await response.json();
+      
+      // Show the new key
+      document.getElementById('apiKeyStep1').style.display = 'none';
+      document.getElementById('apiKeyStep2').style.display = 'block';
+      document.getElementById('newApiKeyValue').textContent = data.key;
+      
+      showNotification('API key generated successfully', 'success');
+    } catch (error) {
+      console.error('Error generating API key:', error);
+      errorElement.textContent = 'Failed to generate API key. Please try again.';
+      errorElement.style.display = 'block';
+    }
+  }
+
+  function copyNewApiKey() {
+    const keyElement = document.getElementById('newApiKeyValue');
+    navigator.clipboard.writeText(keyElement.textContent)
+      .then(() => {
+        showNotification('API key copied to clipboard!', 'success');
+      })
+      .catch(err => {
+        console.error('Failed to copy:', err);
+        showNotification('Failed to copy API key', 'error');
+      });
+  }
+
+  async function revokeApiKey(keyId) {
+    if (!confirm('Are you sure you want to revoke this API key? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      const token = localStorage.getItem('jwtToken');
+      if (!token) {
+        window.location.href = '/index.html';
+        return;
+      }
+
+      const response = await fetch(`/api/v1/keys/${keyId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          localStorage.removeItem('jwtToken');
+          window.location.href = '/index.html';
+          return;
+        }
+        throw new Error('Failed to revoke API key');
+      }
+      
+      showNotification('API key revoked successfully', 'success');
+      await loadApiKeys();
+    } catch (error) {
+      console.error('Error revoking API key:', error);
+      showNotification('Failed to revoke API key', 'error');
+    }
+  }

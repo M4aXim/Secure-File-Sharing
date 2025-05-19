@@ -1226,12 +1226,46 @@
     </div>
   </div>
 
+  <!-- Add CDN Usage Modal -->
+  <div class="modal" id="cdnUsageModal">
+    <div class="modal-background"></div>
+    <div class="modal-card">
+      <header class="modal-card-head">
+        <p class="modal-card-title">CDN Link</p>
+        <button class="delete" aria-label="close"></button>
+      </header>
+      <section class="modal-card-body">
+        <div class="content">
+          <div class="field">
+            <div class="control">
+              <input class="input is-family-code" type="text" id="cdnDirectLink" readonly>
+            </div>
+            <p class="help">Use this link to directly access your file through our CDN.</p>
+          </div>
+
+          <div class="notification is-info is-light mt-4">
+            <p><strong>Tips:</strong></p>
+            <ul>
+              <li>Files are served through our global CDN for fast delivery</li>
+              <li>Links are permanent and won't change</li>
+              <li>Support for range requests and partial content</li>
+              <li>Automatic MIME type detection</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+      <footer class="modal-card-foot">
+        <button class="button is-info copy-link">Copy Link</button>
+        <button class="button" aria-label="close">Close</button>
+      </footer>
+    </div>
+  </div>
+
   <footer>
     <p><strong>FileShare</strong> &copy; 2025 | Made with <i class="fas fa-heart has-text-danger"></i> by Maksim</p>
   </footer>
 
   <script src="/javascript/folder.js"></script>
-
-  </body>
+</body>
 
 </html>
