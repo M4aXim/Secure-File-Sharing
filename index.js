@@ -62,6 +62,7 @@ let usersColl;
 let bannedIpsColl;
 let apiKeysColl;
 let foldersColl;
+let versionsColl;
 
 
 
@@ -73,11 +74,99 @@ async function initMongo() {
     bannedIpsColl = db.collection('banned_ips');
     apiKeysColl   = db.collection('api_keys');
     foldersColl   = db.collection('folders');
+    versionsColl  = db.collection('versions'); // Add versions collection
+    
+    // Create indexes for better query performance
+    await Promise.all([
+      usersColl.createIndex({ username: 1 }, { unique: true }),
+      usersColl.createIndex({ email: 1 }, { unique: true }),
+      usersColl.createIndex({ resetToken: 1 }),
+      bannedIpsColl.createIndex({ ip: 1 }, { unique: true }),
+      bannedIpsColl.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      apiKeysColl.createIndex({ key: 1 }, { unique: true }),
+      apiKeysColl.createIndex({ username: 1 }),
+      foldersColl.createIndex({ folderId: 1 }, { unique: true }),
+      foldersColl.createIndex({ owner: 1 }),
+      foldersColl.createIndex({ isPublic: 1 }),
+      foldersColl.createIndex({ folderName: 1, owner: 1 }),
+      foldersColl.createIndex({ createdAt: 1 }),
+      foldersColl.createIndex({ 'invitedUsers.invitationId': 1 }),
+      versionsColl.createIndex({ fileId: 1, versionNumber: 1 }, { unique: true }),
+      versionsColl.createIndex({ fileId: 1, isLatest: 1 })
+    ]);
+    
+    // Migrate folders from JSON file if needed
+    await migrateFoldersFromFile();
+    
     fastify.log.info('✅ Connected to MongoDB');
-
   } catch (err) {
     fastify.log.error('❌ MongoDB connection error:', err);
     process.exit(1);
+  }
+}
+
+
+// --- FOLDER MIGRATION ---
+// Migration function to move folders from JSON file to MongoDB
+async function migrateFoldersFromFile() {
+  try {
+    // Check if migration has already been done
+    const foldersCount = await foldersColl.countDocuments();
+    if (foldersCount > 0) {
+      fastify.log.info('✅ Folders already exist in MongoDB, skipping migration');
+      return;
+    }
+
+    // Check if the folders JSON file exists
+    try {
+      await fsPromises.access(FOLDERS_FILE);
+    } catch (err) {
+      fastify.log.info('No folders.json file found to migrate');
+      return;
+    }
+
+    // Read folders from JSON file
+    const foldersData = await fsPromises.readFile(FOLDERS_FILE, 'utf8');
+    const folders = JSON.parse(foldersData);
+
+    if (folders.length === 0) {
+      fastify.log.info('No folders to migrate from folders.json');
+      return;
+    }
+
+    // Add timestamps and ensure data integrity
+    const foldersWithTimestamps = folders.map(folder => {
+      return {
+        ...folder,
+        // Convert string dates to Date objects
+        createdAt: folder.createdAt ? new Date(folder.createdAt) : new Date(),
+        updatedAt: new Date(),
+        migratedAt: new Date(),
+        // Ensure friend permissions exist
+        friendPermissions: folder.friendPermissions || {},
+        // Ensure group permissions exist
+        groupPermissions: folder.groupPermissions || {},
+        // Ensure isPublic is a boolean
+        isPublic: Boolean(folder.isPublic)
+      };
+    });
+
+    // Insert all folders into MongoDB
+    const result = await foldersColl.insertMany(foldersWithTimestamps);
+    fastify.log.info(`✅ Successfully migrated ${result.insertedCount} folders to MongoDB`);
+
+    // Create a backup of the original JSON file
+    const backupPath = `${FOLDERS_FILE}.backup-${Date.now()}`;
+    await fsPromises.copyFile(FOLDERS_FILE, backupPath);
+    fastify.log.info(`✅ Created backup of folders.json at ${backupPath}`);
+
+    // Optionally, clear the original file to avoid confusion
+    // await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify([], null, 2));
+    // fastify.log.info('Cleared original folders.json file');
+
+  } catch (err) {
+    fastify.log.error('❌ Error migrating folders to MongoDB:', err);
+    // Don't rethrow, allow the application to continue even if migration fails
   }
 }
 
@@ -115,6 +204,194 @@ async function validateApiKey(key) {
   );
   return apiKey;
 }
+
+// Add this helper function before the versioning functions
+async function ensureMongoInitialized() {
+  if (!versionsColl) {
+    throw new Error('MongoDB collections not initialized');
+  }
+}
+
+// --- FILE VERSIONING ---
+async function createFileVersion(fileId, originalName, versionData) {
+  try {
+    await ensureMongoInitialized();
+    const version = {
+      fileId,
+      originalName,
+      versionNumber: await getNextVersionNumber(fileId),
+      createdAt: new Date(),
+      size: versionData.size,
+      mimeType: versionData.mimeType,
+      hash: versionData.hash,
+      s3Key: versionData.s3Key,
+      metadata: versionData.metadata || {},
+      isLatest: true
+    };
+
+    // Update previous version to not be latest
+    await versionsColl.updateMany(
+      { fileId, isLatest: true },
+      { $set: { isLatest: false } }
+    );
+
+    // Insert new version
+    await versionsColl.insertOne(version);
+    return version;
+  } catch (err) {
+    fastify.log.error('Error creating file version:', err);
+    throw err;
+  }
+}
+
+async function getNextVersionNumber(fileId) {
+  await ensureMongoInitialized();
+  const latestVersion = await versionsColl.findOne(
+    { fileId },
+    { sort: { versionNumber: -1 } }
+  );
+  return latestVersion ? latestVersion.versionNumber + 1 : 1;
+}
+
+async function getFileVersions(fileId) {
+  try {
+    await ensureMongoInitialized();
+    return await versionsColl.find({ fileId })
+      .sort({ versionNumber: -1 })
+      .toArray();
+  } catch (err) {
+    fastify.log.error('Error getting file versions:', err);
+    throw err;
+  }
+}
+
+async function getFileVersion(fileId, versionNumber) {
+  try {
+    await ensureMongoInitialized();
+    return await versionsColl.findOne({ fileId, versionNumber });
+  } catch (err) {
+    fastify.log.error('Error getting specific file version:', err);
+    throw err;
+  }
+}
+
+async function restoreFileVersion(fileId, versionNumber) {
+  try {
+    await ensureMongoInitialized();
+    const versionToRestore = await getFileVersion(fileId, versionNumber);
+    if (!versionToRestore) {
+      throw new Error('Version not found');
+    }
+
+    // Create new version based on the restored version
+    const restoredVersion = {
+      ...versionToRestore,
+      _id: new ObjectId(),
+      versionNumber: await getNextVersionNumber(fileId),
+      createdAt: new Date(),
+      restoredFrom: versionNumber,
+      isLatest: true
+    };
+
+    // Update previous latest version
+    await versionsColl.updateMany(
+      { fileId, isLatest: true },
+      { $set: { isLatest: false } }
+    );
+
+    // Insert restored version as new latest version
+    await versionsColl.insertOne(restoredVersion);
+    return restoredVersion;
+  } catch (err) {
+    fastify.log.error('Error restoring file version:', err);
+    throw err;
+  }
+}
+
+async function deleteFileVersion(fileId, versionNumber) {
+  try {
+    await ensureMongoInitialized();
+    const version = await getFileVersion(fileId, versionNumber);
+    if (!version) {
+      throw new Error('Version not found');
+    }
+
+    // Don't allow deleting the only version
+    const versionsCount = await versionsColl.countDocuments({ fileId });
+    if (versionsCount <= 1) {
+      throw new Error('Cannot delete the only version of a file');
+    }
+
+    // If deleting latest version, make previous version the latest
+    if (version.isLatest) {
+      const previousVersion = await versionsColl.findOne(
+        { fileId, versionNumber: { $lt: versionNumber } },
+        { sort: { versionNumber: -1 } }
+      );
+      if (previousVersion) {
+        await versionsColl.updateOne(
+          { _id: previousVersion._id },
+          { $set: { isLatest: true } }
+        );
+      }
+    }
+
+    // Delete version from S3
+    try {
+      await s3.send(new DeleteObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Key: version.s3Key
+      }));
+    } catch (s3Err) {
+      fastify.log.error('Error deleting version from S3:', s3Err);
+    }
+
+    // Delete version from MongoDB
+    await versionsColl.deleteOne({ fileId, versionNumber });
+    return true;
+  } catch (err) {
+    fastify.log.error('Error deleting file version:', err);
+    throw err;
+  }
+}
+
+// Add versions collection to MongoDB initialization
+
+// Add versioning endpoints
+fastify.get('/api/files/:fileId/versions', async (req, reply) => {
+  try {
+    const { fileId } = req.params;
+    const versions = await getFileVersions(fileId);
+    return reply.send(versions);
+  } catch (err) {
+    fastify.log.error(err);
+    return reply.code(500).send({ error: 'Error getting file versions' });
+  }
+});
+
+fastify.post('/api/files/:fileId/versions/:versionNumber/restore', async (req, reply) => {
+  try {
+    const { fileId, versionNumber } = req.params;
+    const restoredVersion = await restoreFileVersion(fileId, parseInt(versionNumber, 10));
+    return reply.send(restoredVersion);
+  } catch (err) {
+    fastify.log.error(err);
+    return reply.code(500).send({ error: 'Error restoring file version' });
+  }
+});
+
+fastify.delete('/api/files/:fileId/versions/:versionNumber', async (req, reply) => {
+  try {
+    const { fileId, versionNumber } = req.params;
+    await deleteFileVersion(fileId, parseInt(versionNumber, 10));
+    return reply.send({ success: true });
+  } catch (err) {
+    fastify.log.error(err);
+    return reply.code(500).send({ error: 'Error deleting file version' });
+  }
+});
+
+
 
 // --- API KEY ENDPOINTS ---
 fastify.post('/api/v1/keys', async (req, reply) => {
@@ -468,13 +745,24 @@ fastify.addHook('onRequest', async (req, reply) => {
   const ip = getClientIP(req);
   
   try {
+    // Skip IP checks for health endpoint
+    if (req.raw.url === '/api/health') {
+      return;
+    }
+
+    // Check if MongoDB is initialized
+    if (!bannedIpsColl) {
+      fastify.log.warn('MongoDB not initialized yet, skipping IP security check');
+      return;
+    }
+    
     // Check MongoDB for banned IPs
     const banned = await bannedIpsColl.findOne({ 
       ip, 
       expiresAt: { $gt: new Date().toISOString() } 
     });
     
-    if (banned && req.raw.url !== '/api/health') {
+    if (banned) {
       await logActivity({ip, user: 'banned'}, 'banned-ip-request-attempt', { 
         ip, 
         url: req.raw.url,
@@ -967,19 +1255,18 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
   if (!upload) return reply.badRequest('No file uploaded');
   if (upload.file.truncated) return reply.entityTooLarge('File too large');
 
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const meta    = folders.find(f => f.folderId === folderId);
-  if (!meta) return reply.notFound('Folder not found');
+  const folder = await foldersColl.findOne({ folderId });
+  if (!folder) return reply.notFound('Folder not found');
 
-  const isOwner = meta.owner === req.user.username;
-  const perms   = (meta.friendPermissions || {})[req.user.username];
+  const isOwner = folder.owner === req.user.username;
+  const perms   = (folder.friendPermissions || {})[req.user.username];
 
   // Check if user has upload permission through group membership
   let hasGroupUploadPermission = false;
   if (!isOwner && !perms?.upload) {
     const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
     const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
-    hasGroupUploadPermission = myGroupIds.some(id => meta.groupPermissions?.[id]?.upload === true);
+    hasGroupUploadPermission = myGroupIds.some(id => folder.groupPermissions?.[id]?.upload === true);
   }
 
   // Public folders: only owner, users with explicit upload permission, or group members with upload permission can add files
@@ -1001,13 +1288,13 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
   // Send email notification to folder owner if the uploader is not the owner
   if (!isOwner) {
     try {
-      const owner = await usersColl.findOne({ username: meta.owner });
+      const owner = await usersColl.findOne({ username: folder.owner });
       if (owner && owner.email) {
         sendEmailAsync({
           from: `"File Sharing" <${process.env.EMAIL_USER}>`,
           to: owner.email,
-          subject: `New File Uploaded to Your Folder: ${meta.folderName}`,
-          text: `Hello ${meta.owner},\n\n${req.user.username} has uploaded a new file "${upload.filename}" to your folder "${meta.folderName}".\n\nFile details:\n- Name: ${upload.filename}\n- Size: ${formatFileSize(fileBuffer.length)}\n- Type: ${upload.mimetype || 'Unknown'}\n\nYou can view this file in your folder.\n\nThank you.`
+          subject: `New File Uploaded to Your Folder: ${folder.folderName}`,
+          text: `Hello ${folder.owner},\n\n${req.user.username} has uploaded a new file "${upload.filename}" to your folder "${folder.folderName}".\n\nFile details:\n- Name: ${upload.filename}\n- Size: ${formatFileSize(fileBuffer.length)}\n- Type: ${upload.mimetype || 'Unknown'}\n\nYou can view this file in your folder.\n\nThank you.`
         });
       }
     } catch (err) {
@@ -1033,8 +1320,7 @@ fastify.get('/api/generate-download-token', async (req, reply) => {
   const filename = req.query.filename;
   if (!folderId || !filename) return reply.badRequest('Missing params');
 
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const meta = folders.find(f => f.folderId === folderId);
+  const meta = await foldersColl.findOne({ folderId });
   if (!meta) return reply.notFound('Folder not found');
 
   // Check if folder is public first
@@ -1195,8 +1481,7 @@ fastify.get('/api/open-file', async (req, reply) => {
   const { folderId, filename } = req.query;
   if (!folderId || !filename) return reply.badRequest('Missing folderId or filename');
 
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const meta    = folders.find(f => f.folderId === folderId);
+  const meta = await foldersColl.findOne({ folderId });
   if (!meta) return reply.notFound('Folder not found');
 
   let allowed = false;
@@ -1239,8 +1524,7 @@ fastify.get('/api/view-file/:folderId/*', async (req, reply) => {
   const filename = req.params['*'];
   const key = `folders/${folderId}/${filename}`;
 
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const meta = folders.find(f => f.folderId === folderId);
+  const meta = await foldersColl.findOne({ folderId });
   if (!meta) return reply.notFound('Folder not found');
 
   // Check if folder is public first
@@ -1326,9 +1610,8 @@ fastify.get('/api/v1/file/:fileId', async (req, reply) => {
       return reply.code(400).send({ error: 'Invalid file ID format' });
     }
 
-    // Load folder metadata
-    const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-    const meta = folders.find(f => f.folderId === folderId);
+    // Load folder metadata from MongoDB
+    const meta = await foldersColl.findOne({ folderId });
     if (!meta) {
       return reply.code(404).send({ error: 'Folder not found' });
     }
@@ -1492,66 +1775,12 @@ fastify.get('/api/v1/file/:fileId', async (req, reply) => {
 fastify.get('/api/v1/folder/:folderId', async (req, reply) => {
   try {
     const { folderId } = req.params;
-    const apiKey = req.headers['x-api-key'];
-
-    const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-    const folder = folders.find(f => f.folderId === folderId);
-    if (!folder) {
-      return reply.notFound('Folder not found');
-    }
-
-    // If folder is not public, validate API key
-    if (!folder.isPublic) {
-      // Validate API key
-      const keyData = await validateApiKey(apiKey);
-      if (!keyData) {
-        return reply.code(401).send({ error: 'Invalid API key' });
-      }
-
-      // Check if user has access (owner or has permission)
-      const hasAccess = folder.owner === keyData.username || 
-                       (folder.permissions && 
-                        folder.permissions[keyData.username] && 
-                        folder.permissions[keyData.username].download);
-
-      if (!hasAccess) {
-        return reply.forbidden('Access denied');
-      }
-
-      // Update API key usage
-      await apiKeysColl.updateOne(
-        { _id: keyData._id },
-        { $inc: { usageCount: 1 } }
-      );
-    }
-
-    // List files in the folder
-    const data = await s3.send(new ListObjectsV2Command({
-      Bucket: process.env.S3_BUCKET_NAME,
-      Prefix: `folders/${folderId}/`
-    }));
-
-    const files = (data.Contents || []).map(obj => {
-      const filename = obj.Key.slice(`folders/${folderId}/`.length);
-      if (!filename) return null; // Skip folder "files"
-      
-      return {
-        id: `${folderId}:${filename}`,
-        name: filename,
-        size: obj.Size,
-        type: mime.lookup(filename) || 'application/octet-stream',
-        lastModified: obj.LastModified.toISOString(),
-        url: `https://hackclub.maksimmalbasa.in.rs/api/v1/file/${folderId}:${filename}`
-      };
-    }).filter(Boolean);
-
-    return reply.send({
-      folderId,
-      files
-    });
+    const folder = await foldersColl.findOne({ folderId });
+    if (!folder) return reply.notFound('Folder not found');
+    return folder;
   } catch (err) {
-    fastify.log.error('Error listing folder:', err);
-    return reply.internalServerError('Failed to list folder');
+    fastify.log.error('Error getting folder:', err);
+    return reply.internalServerError('Error retrieving folder');
   }
 });
 
@@ -2171,8 +2400,7 @@ fastify.post('/api/change-your-password', { preHandler: [fastify.authenticate] }
 // GET /api/show-friends/:folderId
 fastify.get('/api/show-friends/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { folderId } = req.params;
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const folder  = folders.find(f => f.folderId === folderId);
+  const folder = await foldersColl.findOne({ folderId });
   if (!folder) return reply.notFound('Folder not found');
 
   const isOwner = folder.owner === req.user.username;
@@ -2224,11 +2452,87 @@ fastify.post('/api/owner/make-staff-account', { preHandler: [fastify.authenticat
   }
 });
 
+// POST /api/owner/migrate-folders - Manually trigger folder migration
+fastify.post('/api/owner/migrate-folders', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  if (req.user.username !== OWNER_USERNAME) {
+    return reply.forbidden('Only owner can trigger migration');
+  }
+
+  try {
+    // Force re-migration flag
+    const forceMigration = req.body?.force === true;
+    
+    // Check if already migrated
+    const foldersCount = await foldersColl.countDocuments();
+    if (foldersCount > 0 && !forceMigration) {
+      return reply.code(200).send({
+        message: 'Folders already exist in MongoDB, no migration needed',
+        count: foldersCount
+      });
+    }
+    
+    // If forcing migration and folders exist, drop them first
+    if (forceMigration && foldersCount > 0) {
+      fastify.log.warn(`Force migration requested - dropping ${foldersCount} existing folders`);
+      await foldersColl.deleteMany({});
+    }
+    
+    // Read folders.json file
+    try {
+      await fsPromises.access(FOLDERS_FILE);
+    } catch (err) {
+      return reply.code(404).send({ error: 'No folders.json file found to migrate' });
+    }
+    
+    const foldersData = await fsPromises.readFile(FOLDERS_FILE, 'utf8');
+    const folders = JSON.parse(foldersData);
+    
+    if (folders.length === 0) {
+      return reply.code(200).send({ message: 'No folders to migrate from folders.json' });
+    }
+    
+    // Add timestamps and ensure data integrity
+    const foldersWithTimestamps = folders.map(folder => {
+      return {
+        ...folder,
+        createdAt: folder.createdAt ? new Date(folder.createdAt) : new Date(),
+        updatedAt: new Date(),
+        migratedAt: new Date(),
+        friendPermissions: folder.friendPermissions || {},
+        groupPermissions: folder.groupPermissions || {},
+        isPublic: Boolean(folder.isPublic)
+      };
+    });
+    
+    // Insert all folders into MongoDB
+    const result = await foldersColl.insertMany(foldersWithTimestamps);
+    
+    // Create a backup of the original JSON file
+    const backupPath = `${FOLDERS_FILE}.backup-${Date.now()}`;
+    await fsPromises.copyFile(FOLDERS_FILE, backupPath);
+    
+    await logActivity(req, 'migrate-folders', { 
+      migrated: result.insertedCount,
+      backup: backupPath,
+      forced: forceMigration
+    });
+    
+    return reply.code(200).send({ 
+      message: 'Migration completed successfully',
+      migrated: result.insertedCount,
+      backup: backupPath
+    });
+  } catch (err) {
+    fastify.log.error('Error during migration:', err);
+    return reply.internalServerError('Migration failed: ' + err.message);
+  }
+});
+
 // STAFF PERMISSIONS ENDPOINTS
 
 // View all pending invitations
 fastify.get('/api/staff/invitations', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folders = await foldersColl.find({}).toArray();
   const pending = folders.flatMap(f =>
     (Array.isArray(f.invitedUsers) ? f.invitedUsers : []).map(invite => ({
       folderId:        f.folderId,
@@ -2243,27 +2547,34 @@ fastify.get('/api/staff/invitations', { preHandler: [fastify.authenticate, fasti
 
 // Remove a pending invitation
 fastify.delete('/api/staff/invitations/:invitationId', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
-  const { invitationId } = req.params;
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const folder  = folders.find(f => f.invitationId === invitationId);
-  if (!folder) return reply.notFound('Invitation not found');
-  folder.invitationId   = null;
-  folder.invitedUsername = null;
-  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
-  await logActivity(req, 'staff-remove-invitation', { invitationId, folderId: folder.folderId });
-  return reply.send({ message: 'Invitation removed' });
+  try {
+    const { invitationId } = req.params;
+    const result = await foldersColl.updateMany(
+      { 'invitedUsers.invitationId': invitationId },
+      { $pull: { invitedUsers: { invitationId } } }
+    );
+    if (result.modifiedCount === 0) return reply.notFound('Invitation not found');
+    return { success: true };
+  } catch (err) {
+    fastify.log.error('Error removing invitation:', err);
+    return reply.internalServerError('Error removing invitation');
+  }
 });
 
 // Kick a friend from a folder
 fastify.delete('/api/staff/folders/:folderId/friends/:friendUsername', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
-  const { folderId, friendUsername } = req.params;
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const folder  = folders.find(f => f.folderId === folderId);
-  if (!folder) return reply.notFound('Folder not found');
-  delete (folder.friendPermissions || {})[friendUsername];
-  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
-  await logActivity(req, 'staff-remove-friend', { folderId, friendUsername });
-  return reply.send({ message: `User ${friendUsername} removed from folder` });
+  try {
+    const { folderId, friendUsername } = req.params;
+    const result = await foldersColl.updateOne(
+      { folderId },
+      { $unset: { [`friendPermissions.${friendUsername}`]: "" } }
+    );
+    if (result.matchedCount === 0) return reply.notFound('Folder not found');
+    return { success: true };
+  } catch (err) {
+    fastify.log.error('Error removing friend:', err);
+    return reply.internalServerError('Error removing friend');
+  }
 });
 
 // Scan folder contents metadata
@@ -2271,8 +2582,7 @@ fastify.get('/api/folder-contents', async (req, reply) => {
   const folderId = req.query.folderId || req.query.folderID;
   if (!folderId) return reply.badRequest('folderId is required');
 
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const meta = folders.find(f => f.folderId === folderId);
+  const meta = await foldersColl.findOne({ folderId });
   if (!meta) return reply.notFound('Folder not found');
 
   // Check if folder is public first
@@ -2400,8 +2710,8 @@ fastify.get('/api/staff/users/:username', { preHandler: [fastify.authenticate, f
   if (!user) return reply.notFound('User not found');
   
   // Get folders owned by this user
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const ownedFolders = folders.filter(f => f.owner === username).map(f => ({
+  const ownedFolders = await foldersColl.find({ owner: username }).toArray();
+  const mappedOwnedFolders = ownedFolders.map(f => ({
     folderId: f.folderId,
     folderName: f.folderName,
     isPublic: f.isPublic || false,
@@ -2410,9 +2720,11 @@ fastify.get('/api/staff/users/:username', { preHandler: [fastify.authenticate, f
   }));
   
   // Get folders shared with this user
-  const sharedFolders = folders.filter(f => 
-    f.friendPermissions && f.friendPermissions[username]
-  ).map(f => ({
+  const sharedFolders = await foldersColl.find({ 
+    [`friendPermissions.${username}`]: { $exists: true } 
+  }).toArray();
+  
+  const mappedSharedFolders = sharedFolders.map(f => ({
     folderId: f.folderId,
     folderName: f.folderName,
     owner: f.owner,
@@ -2516,8 +2828,7 @@ fastify.get('/api/staff/folder-contents', { preHandler: [fastify.authenticate, f
   const folderId = req.query.folderId;
   if (!folderId) return reply.badRequest('folderId is required');
   
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const folder  = folders.find(f => f.folderId === folderId);
+  const folder = await foldersColl.findOne({ folderId });
   if (!folder) return reply.notFound('Folder not found');
 
   const data = await s3.send(new ListObjectsV2Command({
@@ -2545,16 +2856,21 @@ fastify.get('/api/check-role', { preHandler: [fastify.authenticate] }, async (re
 
 // Am I owner or can add users
 fastify.get('/api/am-I-owner-of-folder/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
-  const { folderId } = req.params;
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const folder = folders.find(f => f.folderId === folderId);
+  try {
+    const { folderId } = req.params;
+    
+    // Find folder in MongoDB
+    const folder = await foldersColl.findOne({ folderId });
+    if (!folder) return reply.notFound('Folder not found');
 
-  if (!folder) return reply.notFound('Folder not found');
+    const isOwner = folder.owner === req.user.username;
+    const hasAddUsersPermission = folder.friendPermissions?.[req.user.username]?.addUsers === true;
 
-  const isOwner = folder.owner === req.user.username;
-  const hasAddUsersPermission = folder.friendPermissions?.[req.user.username]?.addUsers === true;
-
-  return { isOwner: isOwner || hasAddUsersPermission };
+    return { isOwner: isOwner || hasAddUsersPermission };
+  } catch (err) {
+    fastify.log.error('Error checking folder ownership:', err);
+    return reply.internalServerError('Error checking folder ownership');
+  }
 });
 
 // --- Make Folder Public Endpoint ---
@@ -2619,8 +2935,7 @@ fastify.get('/api/curl/cats', async (req, reply) => {
 
 fastify.get('/api/is-folder-public/:folderId', async (req, reply) => {
   const { folderId } = req.params;
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const folder = folders.find(f => f.folderId === folderId);
+  const folder = await foldersColl.findOne({ folderId });
   if (!folder) return reply.notFound('Folder not found');
   return { isPublic: folder.isPublic || false };
 });
@@ -2725,43 +3040,13 @@ fastify.get('/api/staff/stats/recent-uploads', { preHandler: [fastify.authentica
 });
 
 fastify.get('/api/staff/groups', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
-  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-  
-  // Get folder permissions for each group
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  
-  const enrichedGroups = groups.map(group => {
-    // Count folders with permissions for this group
-    const folderCount = folders.filter(f => f.groupPermissions?.[group.groupId]).length;
-    
-    // Get member details
-    const memberDetails = group.members.map(username => ({
-      username,
-      isOwner: username === group.owner
-    }));
-    
-    // Get pending invitations
-    const pendingInvites = group.invitedUsers || [];
-    
-    return {
-      groupId: group.groupId,
-      groupName: group.groupName,
-      owner: group.owner,
-      createdAt: group.createdAt,
-      memberCount: group.members.length,
-      pendingInviteCount: pendingInvites.length,
-      folderCount,
-      members: memberDetails,
-      pendingInvites: pendingInvites.map(inv => ({
-        username: inv.username,
-        email: inv.email,
-        invitationId: inv.invitationId
-      }))
-    };
-  });
-  
-  await logActivity(req, 'staff-view-all-groups');
-  return { groups: enrichedGroups };
+  try {
+    const groups = await groupsColl.find({}).toArray();
+    return groups;
+  } catch (err) {
+    fastify.log.error('Error getting groups:', err);
+    return reply.internalServerError('Error retrieving groups');
+  }
 });
 
 // GET /api/staff/groups/:groupId/activity
@@ -2840,65 +3125,37 @@ Group Owner: ${group.owner}`
 
 // DELETE /api/staff/groups/:groupId/members/:username
 fastify.delete('/api/staff/groups/:groupId/members/:username', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
-  const { groupId, username } = req.params;
-  
-  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-  const group = groups.find(g => g.groupId === groupId);
-  if (!group) return reply.notFound('Group not found');
-  
-  // Cannot remove the owner
-  if (username === group.owner) {
-    return reply.forbidden('Cannot remove group owner');
+  try {
+    const { groupId, username } = req.params;
+    const result = await groupsColl.updateOne(
+      { groupId },
+      { $pull: { members: username } }
+    );
+    if (result.matchedCount === 0) return reply.notFound('Group not found');
+    return { success: true };
+  } catch (err) {
+    fastify.log.error('Error removing group member:', err);
+    return reply.internalServerError('Error removing group member');
   }
-  
-  // Remove from members
-  group.members = group.members.filter(m => m !== username);
-  
-  // Remove from invited users if present
-  if (group.invitedUsers) {
-    group.invitedUsers = group.invitedUsers.filter(i => i.username !== username);
-  }
-  
-  await fsPromises.writeFile(GROUPS_FILE, JSON.stringify(groups, null, 2));
-  
-  // Remove group permissions from all folders
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  for (const folder of folders) {
-    if (folder.groupPermissions?.[groupId]) {
-      delete folder.groupPermissions[groupId];
-    }
-  }
-  await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(folders, null, 2));
-  
-  await logActivity(req, 'staff-remove-group-member', { groupId, username });
-  return reply.send({ message: 'Member removed from group' });
 });
 
 // GET /api/staff/groups/stats
 fastify.get('/api/staff/groups/stats', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
-  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  
-  const stats = {
-    totalGroups: groups.length,
-    totalMembers: groups.reduce((sum, g) => sum + g.members.length, 0),
-    totalPendingInvites: groups.reduce((sum, g) => sum + (g.invitedUsers?.length || 0), 0),
-    flaggedGroups: groups.filter(g => g.flagged).length,
-    averageMembersPerGroup: groups.length ? groups.reduce((sum, g) => sum + g.members.length, 0) / groups.length : 0,
-    groupsWithFolderAccess: folders.filter(f => Object.keys(f.groupPermissions || {}).length > 0).length,
-    topGroupsByMembers: groups
-      .sort((a, b) => b.members.length - a.members.length)
-      .slice(0, 5)
-      .map(g => ({
-        groupId: g.groupId,
-        groupName: g.groupName,
-        memberCount: g.members.length,
-        owner: g.owner
-      }))
-  };
-  
-  await logActivity(req, 'staff-view-group-stats');
-  return stats;
+  try {
+    const stats = await groupsColl.aggregate([
+      { $project: { memberCount: { $size: { $ifNull: ['$members', []] } } } },
+      { $group: { 
+        _id: null, 
+        totalGroups: { $sum: 1 },
+        avgMembers: { $avg: '$memberCount' },
+        maxMembers: { $max: '$memberCount' }
+      }}
+    ]).toArray();
+    return stats[0] || { totalGroups: 0, avgMembers: 0, maxMembers: 0 };
+  } catch (err) {
+    fastify.log.error('Error getting group statistics:', err);
+    return reply.internalServerError('Error getting statistics');
+  }
 });
 
 
@@ -2927,91 +3184,25 @@ fastify.delete('/api/staff/mfa/disable', { preHandler: [fastify.authenticate, fa
 
 // DELETE /api/owner/delete-account
 fastify.delete('/api/owner/delete-account', { preHandler: [fastify.authenticate] }, async (req, reply) => {
-  const { targetUsername, reason } = req.body;
-  
-  if (!targetUsername) {
-    return reply.badRequest('targetUsername is required');
-  }
-  
-  if (!reason || !['policy_violation', 'user_request'].includes(reason)) {
-    return reply.badRequest('Valid reason is required: "policy_violation" or "user_request"');
-  }
-  
-  // Check authorization: owner can delete any account, users can only delete their own
-  if (req.user.username !== OWNER_USERNAME && req.user.username !== targetUsername) {
-    return reply.forbidden('Only owner can delete other accounts');
-  }
-  
   try {
-    // Find the user to delete
-    const user = await usersColl.findOne({ username: targetUsername });
-    if (!user) {
-      return reply.notFound('User not found');
-    }
-
-    if (reason === 'policy_violation' && user.originalIp) {
-      await bannedIpsColl.insertOne({
-        ip: user.originalIp,
-        bannedAt: new Date().toISOString(),
-        reason: 'Policy violation',
-        bannedBy: req.user.username,
-        bannedUsername: targetUsername
-      });
-    }
+    const username = req.user.username;
     
-    const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-    const userFolders = folders.filter(f => f.owner === targetUsername);
+    // Delete user's folders
+    await foldersColl.deleteMany({ owner: username });
     
-    for (const folder of userFolders) {
-      const data = await s3.send(new ListObjectsV2Command({ 
-        Bucket: process.env.S3_BUCKET_NAME, 
-        Prefix: `folders/${folder.folderId}/` 
-      }));
-      
-      if (data.Contents && data.Contents.length > 0) {
-        for (const obj of data.Contents) {
-          await s3.send(new DeleteObjectCommand({ 
-            Bucket: process.env.S3_BUCKET_NAME, 
-            Key: obj.Key 
-          }));
-        }
-      }
-    }
+    // Remove user from friend permissions
+    await foldersColl.updateMany(
+      { [`friendPermissions.${username}`]: { $exists: true } },
+      { $unset: { [`friendPermissions.${username}`]: "" } }
+    );
     
-    // Remove the user's folders from the folders.json file
-    const updatedFolders = folders.filter(f => f.owner !== targetUsername);
-    await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(updatedFolders, null, 2));
+    // Delete user account
+    await usersColl.deleteOne({ username });
     
-    for (const folder of updatedFolders) {
-      if (folder.friendPermissions && folder.friendPermissions[targetUsername]) {
-        delete folder.friendPermissions[targetUsername];
-      }
-      if (folder.invitedUsername === targetUsername) {
-        folder.invitedUsername = null;
-        folder.invitationId = null;
-      }
-    }
-    await fsPromises.writeFile(FOLDERS_FILE, JSON.stringify(updatedFolders, null, 2));
-    
-    await usersColl.deleteOne({ username: targetUsername });
-    
-    await logActivity(req, 'delete-account', { 
-      targetUsername, 
-      reason, 
-      deletedBy: req.user.username,
-      foldersRemoved: userFolders.length,
-      ipBanned: reason === 'policy_violation' ? user.originalIp : null
-    });
-    
-    return reply.send({ 
-      message: 'Account deleted successfully', 
-      username: targetUsername, 
-      foldersRemoved: userFolders.length,
-      ipBanned: reason === 'policy_violation' ? user.originalIp : null
-    });
+    return { success: true };
   } catch (err) {
     fastify.log.error('Error deleting account:', err);
-    return reply.internalServerError('Failed to delete account');
+    return reply.internalServerError('Error deleting account');
   }
 });
 
@@ -3992,5 +4183,3 @@ const start = async () => {
 };
 
 start();
-
-// --- API V1 ENDPOINTS ---
