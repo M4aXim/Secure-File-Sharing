@@ -301,23 +301,91 @@
     }
     .jump-prev {
       left: 15px;
-    }
-    .jump-next {
+    }    .jump-next {
       right: 15px;
+    }
+    
+    /* Subtitle styles */
+    .subtitle-menu {
+      position: absolute;
+      bottom: 50px;
+      right: 10px;
+      background: rgba(0,0,0,0.8);
+      border-radius: 4px;
+      width: 300px;
+      padding: 12px;
+      z-index: 20;
+      color: white;
+    }
+    .subtitle-header {
+      border-bottom: 1px solid rgba(255,255,255,0.2);
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+    }
+    .subtitle-header h4 {
+      margin: 0;
+      color: white;
+      font-size: 1rem;
+    }
+    .subtitle-options {
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    .subtitle-option {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-radius: 3px;
+      margin-bottom: 4px;
+    }
+    .subtitle-option:hover {
+      background: rgba(255,255,255,0.2);
+    }
+    .subtitle-option.active {
+      background: rgba(50,115,220,0.5);
+    }
+    .subtitle-upload {
+      margin-top: 12px;
+      border-top: 1px solid rgba(255,255,255,0.2);
+      padding-top: 12px;
+    }
+    .subtitle-upload-btn {
+      display: block;
+      background: rgba(50,115,220,0.7);
+      padding: 8px 12px;
+      border-radius: 3px;
+      text-align: center;
+      cursor: pointer;
+    }
+    .subtitle-upload-btn:hover {
+      background: rgba(50,115,220,0.9);
     }
   </style>
 </head>
 <body>
   <section class="section">
     <div class="container">
-      <h1 class="title has-text-centered">MP4 Player</h1>
-      <div class="video-container box" id="mainPlayerContainer">
-        <video id="video" preload="metadata" crossorigin="anonymous"></video>
+      <h1 class="title has-text-centered">MP4 Player</h1>      <div class="video-container box" id="mainPlayerContainer">
+        <video id="video" preload="metadata" crossorigin="anonymous">
+          <!-- Subtitle tracks will be added dynamically -->
+        </video>
         <div class="video-title" id="videoTitle"></div>
         <div class="loading-indicator" id="loadingIndicator">
           <i class="fas fa-spinner"></i>
         </div>
         <div class="notification-area" id="notificationArea"></div>
+        <div class="subtitle-menu" id="subtitleMenu" style="display: none;">
+          <div class="subtitle-header">
+            <h4>Subtitles</h4>
+          </div>
+          <div class="subtitle-options" id="subtitleOptions">
+            <div class="subtitle-option" data-value="none">Off</div>
+            <!-- Subtitle options will be added dynamically -->
+          </div>
+          <div class="subtitle-upload">
+            <label for="subtitleFile" class="subtitle-upload-btn">Upload subtitle file (.srt/.vtt)</label>
+            <input type="file" id="subtitleFile" accept=".srt,.vtt" style="display: none;">
+          </div>
+        </div>
 
         <button class="jump-btn jump-prev" id="jumpPrev">
           <i class="fas fa-backward"></i>
@@ -327,8 +395,7 @@
         </button>
 
         <div class="keyboard-info" id="keyboardInfo">
-          <h3>Keyboard Shortcuts</h3>
-          <ul>
+          <h3>Keyboard Shortcuts</h3>          <ul>
             <li><strong>Space</strong> - Play/Pause</li>
             <li><strong>← →</strong> - Seek -/+ 10s</li>
             <li><strong>↑ ↓</strong> - Volume +/-</li>
@@ -336,6 +403,7 @@
             <li><strong>F</strong> - Fullscreen</li>
             <li><strong>P</strong> - Picture-in-Picture</li>
             <li><strong>C</strong> - Screenshot</li>
+            <li><strong>S</strong> - Toggle Subtitles</li>
             <li><strong>?</strong> - Show/hide this help</li>
             <li><strong>1-9</strong> - Seek to 10%-90%</li>
             <li><strong>0</strong> - Restart video</li>
@@ -396,11 +464,14 @@
             <button id="screenshotBtn" class="video-btn tooltip" title="Take Screenshot">
               <span class="icon"><i class="fas fa-camera"></i></span>
               <span class="tooltip-text">Screenshot (C)</span>
-            </button>
-
-            <button id="loopBtn" class="video-btn tooltip" title="Loop Video">
+            </button>            <button id="loopBtn" class="video-btn tooltip" title="Loop Video">
               <span class="icon"><i class="fas fa-sync"></i></span>
               <span class="tooltip-text">Loop</span>
+            </button>
+
+            <button id="subtitleBtn" class="video-btn tooltip" title="Subtitles">
+              <span class="icon"><i class="fas fa-closed-captioning"></i></span>
+              <span class="tooltip-text">Subtitles (S)</span>
             </button>
 
             <button id="helpBtn" class="video-btn tooltip" title="Keyboard Shortcuts">
