@@ -62,6 +62,7 @@ let usersColl;
 let bannedIpsColl;
 let apiKeysColl;
 let foldersColl;
+let versionsColl;
 
 
 
@@ -73,13 +74,14 @@ async function initMongo() {
     bannedIpsColl = db.collection('banned_ips');
     apiKeysColl   = db.collection('api_keys');
     foldersColl   = db.collection('folders');
+    versionsColl  = db.collection('versions'); // Add versions collection
     fastify.log.info('✅ Connected to MongoDB');
-
   } catch (err) {
     fastify.log.error('❌ MongoDB connection error:', err);
     process.exit(1);
   }
 }
+
 
 initMongo();
 
@@ -115,6 +117,194 @@ async function validateApiKey(key) {
   );
   return apiKey;
 }
+
+// Add this helper function before the versioning functions
+async function ensureMongoInitialized() {
+  if (!versionsColl) {
+    throw new Error('MongoDB collections not initialized');
+  }
+}
+
+// --- FILE VERSIONING ---
+async function createFileVersion(fileId, originalName, versionData) {
+  try {
+    await ensureMongoInitialized();
+    const version = {
+      fileId,
+      originalName,
+      versionNumber: await getNextVersionNumber(fileId),
+      createdAt: new Date(),
+      size: versionData.size,
+      mimeType: versionData.mimeType,
+      hash: versionData.hash,
+      s3Key: versionData.s3Key,
+      metadata: versionData.metadata || {},
+      isLatest: true
+    };
+
+    // Update previous version to not be latest
+    await versionsColl.updateMany(
+      { fileId, isLatest: true },
+      { $set: { isLatest: false } }
+    );
+
+    // Insert new version
+    await versionsColl.insertOne(version);
+    return version;
+  } catch (err) {
+    fastify.log.error('Error creating file version:', err);
+    throw err;
+  }
+}
+
+async function getNextVersionNumber(fileId) {
+  await ensureMongoInitialized();
+  const latestVersion = await versionsColl.findOne(
+    { fileId },
+    { sort: { versionNumber: -1 } }
+  );
+  return latestVersion ? latestVersion.versionNumber + 1 : 1;
+}
+
+async function getFileVersions(fileId) {
+  try {
+    await ensureMongoInitialized();
+    return await versionsColl.find({ fileId })
+      .sort({ versionNumber: -1 })
+      .toArray();
+  } catch (err) {
+    fastify.log.error('Error getting file versions:', err);
+    throw err;
+  }
+}
+
+async function getFileVersion(fileId, versionNumber) {
+  try {
+    await ensureMongoInitialized();
+    return await versionsColl.findOne({ fileId, versionNumber });
+  } catch (err) {
+    fastify.log.error('Error getting specific file version:', err);
+    throw err;
+  }
+}
+
+async function restoreFileVersion(fileId, versionNumber) {
+  try {
+    await ensureMongoInitialized();
+    const versionToRestore = await getFileVersion(fileId, versionNumber);
+    if (!versionToRestore) {
+      throw new Error('Version not found');
+    }
+
+    // Create new version based on the restored version
+    const restoredVersion = {
+      ...versionToRestore,
+      _id: new ObjectId(),
+      versionNumber: await getNextVersionNumber(fileId),
+      createdAt: new Date(),
+      restoredFrom: versionNumber,
+      isLatest: true
+    };
+
+    // Update previous latest version
+    await versionsColl.updateMany(
+      { fileId, isLatest: true },
+      { $set: { isLatest: false } }
+    );
+
+    // Insert restored version as new latest version
+    await versionsColl.insertOne(restoredVersion);
+    return restoredVersion;
+  } catch (err) {
+    fastify.log.error('Error restoring file version:', err);
+    throw err;
+  }
+}
+
+async function deleteFileVersion(fileId, versionNumber) {
+  try {
+    await ensureMongoInitialized();
+    const version = await getFileVersion(fileId, versionNumber);
+    if (!version) {
+      throw new Error('Version not found');
+    }
+
+    // Don't allow deleting the only version
+    const versionsCount = await versionsColl.countDocuments({ fileId });
+    if (versionsCount <= 1) {
+      throw new Error('Cannot delete the only version of a file');
+    }
+
+    // If deleting latest version, make previous version the latest
+    if (version.isLatest) {
+      const previousVersion = await versionsColl.findOne(
+        { fileId, versionNumber: { $lt: versionNumber } },
+        { sort: { versionNumber: -1 } }
+      );
+      if (previousVersion) {
+        await versionsColl.updateOne(
+          { _id: previousVersion._id },
+          { $set: { isLatest: true } }
+        );
+      }
+    }
+
+    // Delete version from S3
+    try {
+      await s3.send(new DeleteObjectCommand({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Key: version.s3Key
+      }));
+    } catch (s3Err) {
+      fastify.log.error('Error deleting version from S3:', s3Err);
+    }
+
+    // Delete version from MongoDB
+    await versionsColl.deleteOne({ fileId, versionNumber });
+    return true;
+  } catch (err) {
+    fastify.log.error('Error deleting file version:', err);
+    throw err;
+  }
+}
+
+// Add versions collection to MongoDB initialization
+
+// Add versioning endpoints
+fastify.get('/api/files/:fileId/versions', async (req, reply) => {
+  try {
+    const { fileId } = req.params;
+    const versions = await getFileVersions(fileId);
+    return reply.send(versions);
+  } catch (err) {
+    fastify.log.error(err);
+    return reply.code(500).send({ error: 'Error getting file versions' });
+  }
+});
+
+fastify.post('/api/files/:fileId/versions/:versionNumber/restore', async (req, reply) => {
+  try {
+    const { fileId, versionNumber } = req.params;
+    const restoredVersion = await restoreFileVersion(fileId, parseInt(versionNumber, 10));
+    return reply.send(restoredVersion);
+  } catch (err) {
+    fastify.log.error(err);
+    return reply.code(500).send({ error: 'Error restoring file version' });
+  }
+});
+
+fastify.delete('/api/files/:fileId/versions/:versionNumber', async (req, reply) => {
+  try {
+    const { fileId, versionNumber } = req.params;
+    await deleteFileVersion(fileId, parseInt(versionNumber, 10));
+    return reply.send({ success: true });
+  } catch (err) {
+    fastify.log.error(err);
+    return reply.code(500).send({ error: 'Error deleting file version' });
+  }
+});
+
+
 
 // --- API KEY ENDPOINTS ---
 fastify.post('/api/v1/keys', async (req, reply) => {
@@ -967,7 +1157,7 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
   if (!upload) return reply.badRequest('No file uploaded');
   if (upload.file.truncated) return reply.entityTooLarge('File too large');
 
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
+  const folder = await foldersColl.findOne({ folderId });
   const meta    = folders.find(f => f.folderId === folderId);
   if (!meta) return reply.notFound('Folder not found');
 
@@ -2545,16 +2735,21 @@ fastify.get('/api/check-role', { preHandler: [fastify.authenticate] }, async (re
 
 // Am I owner or can add users
 fastify.get('/api/am-I-owner-of-folder/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
-  const { folderId } = req.params;
-  const folders = JSON.parse(await fsPromises.readFile(FOLDERS_FILE, 'utf8'));
-  const folder = folders.find(f => f.folderId === folderId);
+  try {
+    const { folderId } = req.params;
+    
+    // Find folder in MongoDB
+    const folder = await foldersColl.findOne({ folderId });
+    if (!folder) return reply.notFound('Folder not found');
 
-  if (!folder) return reply.notFound('Folder not found');
+    const isOwner = folder.owner === req.user.username;
+    const hasAddUsersPermission = folder.friendPermissions?.[req.user.username]?.addUsers === true;
 
-  const isOwner = folder.owner === req.user.username;
-  const hasAddUsersPermission = folder.friendPermissions?.[req.user.username]?.addUsers === true;
-
-  return { isOwner: isOwner || hasAddUsersPermission };
+    return { isOwner: isOwner || hasAddUsersPermission };
+  } catch (err) {
+    fastify.log.error('Error checking folder ownership:', err);
+    return reply.internalServerError('Error checking folder ownership');
+  }
 });
 
 // --- Make Folder Public Endpoint ---
@@ -3992,5 +4187,3 @@ const start = async () => {
 };
 
 start();
-
-// --- API V1 ENDPOINTS ---
