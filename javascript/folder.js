@@ -91,6 +91,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   });
 
+  // Clipboard helper function
+  async function copyToClipboard(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      showNotification('Copied to clipboard!', 'is-success');
+    } catch (err) {
+      console.error('Failed to copy:', err);
+      showNotification('Failed to copy to clipboard', 'is-danger');
+    }
+  }
+
   // Copy link button functionality
   document.querySelector('.copy-link').addEventListener('click', () => {
     copyToClipboard(cdnDirectLink.value);

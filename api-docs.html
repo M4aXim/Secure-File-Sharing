@@ -144,8 +144,8 @@ X-API-Key: your-api-key-here
 
             <div class="endpoint">
                 <span class="method get">GET</span>
-                <strong>/api/v1/file/:fileId</strong>
-                <p>Retrieve a file by its ID. Files are displayed inline in the browser when possible (images, PDFs, videos, etc). No API key is required for files in public folders.</p>
+                <strong>/api/v1/file/:folderId/:filename</strong>
+                <p>Retrieve a file by its folder ID and filename. The URL format is folderId:filename (e.g. d95221545274ea2d54786b6ccbd8dea0:1746874669921-document.pdf). Files are displayed inline in the browser when possible (images, PDFs, videos, etc). No API key is required for files in public folders.</p>
                 <h4>Response Headers:</h4>
                 <ul>
                     <li>Cache-Control: public, max-age=31536000</li>
