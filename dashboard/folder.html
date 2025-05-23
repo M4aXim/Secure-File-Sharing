@@ -1029,6 +1029,455 @@
       font-family: monospace;
       font-size: 0.9rem;
     }
+
+    /* Mobile Responsive Styles */
+    @media screen and (max-width: 768px) {
+      .content-box {
+        margin: 1rem;
+        padding: 1rem;
+      }
+
+      .breadcrumb-area {
+        padding: 0.75rem;
+      }
+
+      .folder-title {
+        font-size: 1.5rem;
+      }
+
+      .drop-zone {
+        padding: 1.5rem;
+      }
+
+      .is-flex.is-justify-content-space-between {
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: center;
+      }
+
+      .search-container {
+        max-width: 100%;
+        width: 100%;
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      .search-container .input {
+        flex-grow: 1;
+      }
+
+      .grid-view {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 0.75rem;
+      }
+
+      .list-view .file-item {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 0.75rem;
+      }
+
+      .list-view .file-info {
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+      }
+
+      .list-view .file-meta {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+      }
+
+      .list-view .file-actions {
+        margin-top: 0.75rem;
+        width: 100%;
+        justify-content: flex-end;
+      }
+
+      .modal-card {
+        width: 95%;
+        margin: 0 auto;
+      }
+
+      .file-preview-content {
+        width: 95%;
+        height: 90%;
+      }
+
+      .gallery-content {
+        width: 95%;
+      }
+
+      .gallery-image {
+        max-height: 70vh;
+      }
+
+      .notification {
+        width: 90%;
+        left: 50%;
+        transform: translateX(-50%) translateY(-100px);
+      }
+
+      .notification.show {
+        transform: translateX(-50%) translateY(0);
+      }
+
+      .file-action-btn {
+        padding: 0.4rem;
+        font-size: 0.8rem;
+      }
+
+      .file-action-btn .icon {
+        margin-right: 0.25rem;
+      }
+
+      .thumbnail-container {
+        height: 120px;
+      }
+
+      .list-view .thumbnail-container {
+        width: 50px;
+        height: 50px;
+        margin-right: 0.75rem;
+      }
+
+      .list-view .file-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 1.2rem;
+      }
+
+      .list-view .file-name {
+        font-size: 1rem;
+      }
+
+      .list-view .file-meta {
+        font-size: 0.8rem;
+      }
+
+      .list-view .file-action-btn {
+        padding: 0.4rem;
+        font-size: 0.8rem;
+      }
+
+      .list-view .file-action-btn .icon {
+        margin-right: 0.25rem;
+      }
+
+      .list-view .file-action-btn span {
+        display: none;
+      }
+
+      .list-view .file-action-btn .icon {
+        margin-right: 0;
+      }
+
+      .list-view .file-action-btn {
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .list-view .file-action-btn i {
+        margin: 0;
+      }
+
+      .list-view .file-actions {
+        gap: 0.5rem;
+      }
+
+      .list-view .file-item {
+        position: relative;
+        padding-right: 100px;
+      }
+
+      .list-view .file-actions {
+        position: absolute;
+        right: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        margin: 0;
+      }
+
+      .list-view .file-info {
+        padding-right: 80px;
+      }
+
+      .list-view .file-meta {
+        margin-top: 0.25rem;
+      }
+
+      .list-view .file-meta span {
+        font-size: 0.75rem;
+      }
+
+      .list-view .file-meta i {
+        font-size: 0.75rem;
+      }
+
+      .list-view .file-name {
+        margin-bottom: 0.15rem;
+      }
+
+      .list-view .file-item {
+        padding: 0.75rem;
+      }
+
+      .list-view .file-item:hover {
+        transform: none;
+      }
+
+      .list-view .file-icon {
+        margin-right: 0.5rem;
+      }
+
+      .list-view .file-info {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .list-view .file-name {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+
+      .list-view .file-meta {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+
+      .list-view .file-actions {
+        flex-shrink: 0;
+      }
+
+      .list-view .file-action-btn {
+        width: 28px;
+        height: 28px;
+      }
+
+      .list-view .file-action-btn i {
+        font-size: 0.8rem;
+      }
+
+      .list-view .file-item {
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .list-view .file-item:hover {
+        transform: none;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      }
+
+      .list-view .file-icon {
+        width: 28px;
+        height: 28px;
+        font-size: 1rem;
+      }
+
+      .list-view .file-name {
+        font-size: 0.9rem;
+      }
+
+      .list-view .file-meta {
+        font-size: 0.75rem;
+      }
+
+      .list-view .file-action-btn {
+        width: 24px;
+        height: 24px;
+      }
+
+      .list-view .file-action-btn i {
+        font-size: 0.7rem;
+      }
+
+      .list-view .file-actions {
+        gap: 0.25rem;
+      }
+
+      .list-view .file-item {
+        padding-right: 90px;
+      }
+
+      .list-view .file-info {
+        padding-right: 70px;
+      }
+
+      .list-view .file-actions {
+        right: 0.5rem;
+      }
+
+      .list-view .file-item {
+        padding: 0.5rem;
+      }
+
+      .list-view .file-icon {
+        margin-right: 0.35rem;
+      }
+
+      .list-view .file-name {
+        font-size: 0.85rem;
+      }
+
+      .list-view .file-meta {
+        font-size: 0.7rem;
+      }
+
+      .list-view .file-action-btn {
+        width: 22px;
+        height: 22px;
+      }
+
+      .list-view .file-action-btn i {
+        font-size: 0.65rem;
+      }
+
+      .list-view .file-actions {
+        gap: 0.2rem;
+      }
+
+      .list-view .file-item {
+        padding-right: 85px;
+      }
+
+      .list-view .file-info {
+        padding-right: 65px;
+      }
+
+      .list-view .file-actions {
+        right: 0.35rem;
+      }
+    }
+
+    /* Small Mobile Devices */
+    @media screen and (max-width: 480px) {
+      .content-box {
+        margin: 0.5rem;
+        padding: 0.75rem;
+      }
+
+      .breadcrumb-area {
+        padding: 0.5rem;
+      }
+
+      .folder-title {
+        font-size: 1.25rem;
+      }
+
+      .drop-zone {
+        padding: 1rem;
+      }
+
+      .grid-view {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 0.5rem;
+      }
+
+      .thumbnail-container {
+        height: 100px;
+      }
+
+      .list-view .file-item {
+        padding: 0.5rem;
+        padding-right: 80px;
+      }
+
+      .list-view .file-info {
+        padding-right: 60px;
+      }
+
+      .list-view .file-actions {
+        right: 0.25rem;
+      }
+
+      .list-view .file-icon {
+        width: 24px;
+        height: 24px;
+        font-size: 0.9rem;
+      }
+
+      .list-view .file-name {
+        font-size: 0.8rem;
+      }
+
+      .list-view .file-meta {
+        font-size: 0.65rem;
+      }
+
+      .list-view .file-action-btn {
+        width: 20px;
+        height: 20px;
+      }
+
+      .list-view .file-action-btn i {
+        font-size: 0.6rem;
+      }
+
+      .list-view .file-actions {
+        gap: 0.15rem;
+      }
+
+      .buttons {
+        gap: 0.25rem;
+      }
+
+      .file-action-btn {
+        padding: 0.3rem;
+        font-size: 0.7rem;
+      }
+
+      .search-container {
+        gap: 0.25rem;
+      }
+
+      .search-container .input {
+        font-size: 0.9rem;
+      }
+
+      .search-container .button {
+        padding: 0.3rem;
+      }
+
+      .search-container .button .icon {
+        font-size: 0.8rem;
+      }
+
+      .modal-card {
+        width: 98%;
+      }
+
+      .file-preview-content {
+        width: 98%;
+        height: 95%;
+      }
+
+      .gallery-content {
+        width: 98%;
+      }
+
+      .gallery-image {
+        max-height: 65vh;
+      }
+
+      .notification {
+        width: 95%;
+      }
+    }
   </style>
 </head>
 
