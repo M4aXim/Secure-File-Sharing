@@ -30,6 +30,7 @@ const XLSX               = require('xlsx');
 const archiver           = require('archiver');
 const jwt                = require('jsonwebtoken');
 const { ObjectId }       = require('mongodb');
+const zlib = require('zlib');
 
 // Configure ffmpeg path
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
@@ -499,6 +500,10 @@ const BCC_LIST         = process.env.BCC
   ? process.env.BCC.split(',').map(addr => addr.trim())
   : [];
 const MFA_ISSUER       = process.env.MFA_ISSUER || 'FileShare';
+
+const COMPRESSION_ENABLED = process.env.COMPRESSION_ENABLED === 'true';
+const COMPRESSION_LEVEL = parseInt(process.env.COMPRESSION_LEVEL, 10) || 6; // 0-9, higher means better compression but slower
+const COMPRESSION_THRESHOLD = parseInt(process.env.COMPRESSION_THRESHOLD, 10) || 1024 * 1024; // 1MB default threshold
 
 if (!JWT_SECRET) {
   fastify.log.error('Missing JWT_SECRET in .env');
@@ -1227,7 +1232,6 @@ fastify.post('/api/create-folder', { preHandler: [fastify.authenticate] }, async
   return { message: 'Folder created', folderId };
 });
 // POST /api/upload-file/:folderId
-// POST /api/upload-file/:folderId
 fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { folderId } = req.params;
   const upload = await req.file();
@@ -1256,13 +1260,44 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
 
   // Store in S3
   const filename = `${Date.now()}-${upload.filename}`;
-  const fileBuffer = await upload.toBuffer();
+  let fileBuffer = await upload.toBuffer();
+  let contentType = upload.mimetype || mime.lookup(filename) || 'application/octet-stream';
+  let contentLength = fileBuffer.length;
+  let isCompressed = false;
+
+  // Apply compression if enabled and file is large enough
+  if (COMPRESSION_ENABLED && fileBuffer.length >= COMPRESSION_THRESHOLD) {
+    try {
+      const compressed = await new Promise((resolve, reject) => {
+        zlib.gzip(fileBuffer, { level: COMPRESSION_LEVEL }, (err, result) => {
+          if (err) reject(err);
+          else resolve(result);
+        });
+      });
+      
+      // Only use compression if it actually reduced the size
+      if (compressed.length < fileBuffer.length) {
+        fileBuffer = compressed;
+        contentType = 'application/gzip';
+        contentLength = compressed.length;
+        isCompressed = true;
+      }
+    } catch (err) {
+      fastify.log.warn('Compression failed:', err);
+      // Continue with uncompressed file
+    }
+  }
+
   await s3.send(new PutObjectCommand({
     Bucket: process.env.S3_BUCKET_NAME,
     Key:    `folders/${folderId}/${filename}`,
     Body:   fileBuffer,
-    ContentType: upload.mimetype || mime.lookup(filename) || 'application/octet-stream',
-    ContentLength: fileBuffer.length
+    ContentType: contentType,
+    ContentLength: contentLength,
+    Metadata: {
+      'original-content-type': upload.mimetype || mime.lookup(filename) || 'application/octet-stream',
+      'is-compressed': isCompressed.toString()
+    }
   }));
 
   // Notify owner
@@ -1278,8 +1313,8 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
     }
   }
 
-  await logActivity(req, 'upload-file', { folderId, filename });
-  return { message: 'File uploaded', filename };
+  await logActivity(req, 'upload-file', { folderId, filename, isCompressed });
+  return { message: 'File uploaded', filename, isCompressed };
 });
 
 function formatFileSize(bytes) {
@@ -1367,9 +1402,22 @@ fastify.get('/api/download-file', async (req, reply) => {
     Key:    `folders/${data.folderId}/${data.filename}`
   });
   const response = await s3.send(command);
-  const stream = response.Body;
+  let stream = response.Body;
 
-  await logActivity(req, 'download-file', { folderId: data.folderId, filename: data.filename });
+  // Check if file is compressed
+  const isCompressed = response.Metadata?.['is-compressed'] === 'true';
+  const originalContentType = response.Metadata?.['original-content-type'];
+
+  if (isCompressed) {
+    // Create a gunzip transform stream
+    const gunzip = zlib.createGunzip();
+    stream = stream.pipe(gunzip);
+    reply.header('Content-Type', originalContentType);
+  } else {
+    reply.header('Content-Type', response.ContentType);
+  }
+
+  await logActivity(req, 'download-file', { folderId: data.folderId, filename: data.filename, isCompressed });
   reply.header('Content-Disposition', `attachment; filename="${data.filename}"`);
   return reply.send(stream);
 });
@@ -1383,11 +1431,24 @@ fastify.get('/api/unable-to-load/download-file', async (req, reply) => {
 
   try {
     await s3.send(new HeadObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key }));
-    const command  = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key });
+    const command = new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key });
     const response = await s3.send(command);
-    const stream   = response.Body;
+    let stream = response.Body;
 
-    await logActivity(req, 'force-download-file-noauth', { folderId, filename });
+    // Check if file is compressed
+    const isCompressed = response.Metadata?.['is-compressed'] === 'true';
+    const originalContentType = response.Metadata?.['original-content-type'];
+
+    if (isCompressed) {
+      // Create a gunzip transform stream
+      const gunzip = zlib.createGunzip();
+      stream = stream.pipe(gunzip);
+      reply.header('Content-Type', originalContentType);
+    } else {
+      reply.header('Content-Type', response.ContentType);
+    }
+
+    await logActivity(req, 'force-download-file-noauth', { folderId, filename, isCompressed });
     reply.header('Content-Disposition', `attachment; filename="${filename}"`);
     return reply.send(stream);
   } catch {
@@ -1475,14 +1536,26 @@ fastify.get('/api/open-file', async (req, reply) => {
     Bucket: process.env.S3_BUCKET_NAME,
     Key: key
   }));
-  const mimeType = mime.lookup(path.extname(filename)) || 'application/octet-stream';
-  reply.header('Content-Type', mimeType);
+  let stream = response.Body;
+
+  // Check if file is compressed
+  const isCompressed = response.Metadata?.['is-compressed'] === 'true';
+  const originalContentType = response.Metadata?.['original-content-type'];
+
+  if (isCompressed) {
+    // Create a gunzip transform stream
+    const gunzip = zlib.createGunzip();
+    stream = stream.pipe(gunzip);
+    reply.header('Content-Type', originalContentType);
+  } else {
+    reply.header('Content-Type', response.ContentType);
+  }
+
   reply.header('Content-Disposition', `inline; filename="${filename}"`);
-  await logActivity(req, 'open-file', { folderId, filename });
-  return reply.send(response.Body);
+  await logActivity(req, 'open-file', { folderId, filename, isCompressed });
+  return reply.send(stream);
 });
 
-// GET /api/view-file/:folderId/*
 // GET /api/view-file/:folderId/*
 fastify.get('/api/view-file/:folderId/*', async (req, reply) => {
   const { folderId } = req.params;
@@ -1497,11 +1570,24 @@ fastify.get('/api/view-file/:folderId/*', async (req, reply) => {
     try {
       await s3.send(new HeadObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: `folders/${folderId}/${filename}` }));
       const resp = await s3.send(new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: `folders/${folderId}/${filename}` }));
-      const mimeType = mime.lookup(filename) || 'application/octet-stream';
-      reply.header('Content-Type', mimeType);
+      let stream = resp.Body;
+
+      // Check if file is compressed
+      const isCompressed = resp.Metadata?.['is-compressed'] === 'true';
+      const originalContentType = resp.Metadata?.['original-content-type'];
+
+      if (isCompressed) {
+        // Create a gunzip transform stream
+        const gunzip = zlib.createGunzip();
+        stream = stream.pipe(gunzip);
+        reply.header('Content-Type', originalContentType);
+      } else {
+        reply.header('Content-Type', resp.ContentType);
+      }
+
       reply.header('Content-Disposition', 'inline');
-      await logActivity(req, 'view-public-file', { folderId, filename });
-      return reply.send(resp.Body);
+      await logActivity(req, 'view-public-file', { folderId, filename, isCompressed });
+      return reply.send(stream);
     } catch (err) {
       if (err.name === 'NotFound') return reply.notFound('File not found');
       fastify.log.error(err);
@@ -1537,11 +1623,24 @@ fastify.get('/api/view-file/:folderId/*', async (req, reply) => {
       Bucket: process.env.S3_BUCKET_NAME,
       Key: `folders/${folderId}/${filename}`
     }));
-    const mimeType = mime.lookup(filename) || 'application/octet-stream';
-    reply.header('Content-Type', mimeType);
+    let stream = resp.Body;
+
+    // Check if file is compressed
+    const isCompressed = resp.Metadata?.['is-compressed'] === 'true';
+    const originalContentType = resp.Metadata?.['original-content-type'];
+
+    if (isCompressed) {
+      // Create a gunzip transform stream
+      const gunzip = zlib.createGunzip();
+      stream = stream.pipe(gunzip);
+      reply.header('Content-Type', originalContentType);
+    } else {
+      reply.header('Content-Type', resp.ContentType);
+    }
+
     reply.header('Content-Disposition', 'inline');
-    await logActivity(req, 'view-file', { folderId, filename });
-    return reply.send(resp.Body);
+    await logActivity(req, 'view-file', { folderId, filename, isCompressed });
+    return reply.send(stream);
   } catch (err) {
     if (err.name === 'NotFound') return reply.notFound('File not found');
     fastify.log.error(err);
@@ -1556,8 +1655,31 @@ fastify.get('/api/v1/file/:fileId', async (req, reply) => {
     const apiKey = req.headers['x-api-key'];
     const range = req.headers.range;
 
-    // Parse file ID
-    const [folderId, filename] = fileId.split(':', 2);
+    // Parse file ID with proper URL decoding
+    let folderId, filename;
+    try {
+      // First try the standard format (folderId:filename)
+      const parts = decodeURIComponent(fileId).split(':', 2);
+      if (parts.length === 2) {
+        [folderId, filename] = parts;
+      } else {
+        // If no colon found, try to extract from the last occurrence of a folder ID pattern
+        // This handles cases where the filename might contain colons
+        const folderIdPattern = /^[a-f0-9]{32}$/; // Assuming folder IDs are 32-character hex
+        const lastFolderIdIndex = fileId.lastIndexOf('/');
+        if (lastFolderIdIndex !== -1) {
+          const potentialFolderId = fileId.slice(lastFolderIdIndex + 1, lastFolderIdIndex + 33);
+          if (folderIdPattern.test(potentialFolderId)) {
+            folderId = potentialFolderId;
+            filename = fileId.slice(lastFolderIdIndex + 34);
+          }
+        }
+      }
+    } catch (err) {
+      fastify.log.warn('Error parsing fileId:', { fileId, error: err.message });
+      return reply.code(400).send({ error: 'Invalid file ID format' });
+    }
+
     if (!folderId || !filename) {
       return reply.code(400).send({ error: 'Invalid file ID format' });
     }
@@ -1602,13 +1724,33 @@ fastify.get('/api/v1/file/:fileId', async (req, reply) => {
       }));
     } catch (err) {
       if (err.name === 'NotFound' || err.name === 'NoSuchKey') {
-        return reply.code(404).send({ error: 'File not found' });
+        // Try alternative encoding if file not found
+        try {
+          const alternativeKey = `folders/${folderId}/${encodeURIComponent(filename)}`;
+          headRes = await s3.send(new HeadObjectCommand({
+            Bucket: process.env.S3_BUCKET_NAME,
+            Key: alternativeKey
+          }));
+        } catch (altErr) {
+          fastify.log.error('File not found with both original and encoded filename:', {
+            folderId,
+            filename,
+            error: err.message,
+            altError: altErr.message
+          });
+          return reply.code(404).send({ error: 'File not found' });
+        }
+      } else {
+        throw err;
       }
-      throw err;
     }
 
+    // Check if file is compressed
+    const isCompressed = headRes.Metadata?.['is-compressed'] === 'true';
+    const originalContentType = headRes.Metadata?.['original-content-type'];
+
     // Determine MIME type and content disposition
-    const mimeType = mime.lookup(filename) || 'application/octet-stream';
+    const mimeType = isCompressed ? originalContentType : (mime.lookup(filename) || 'application/octet-stream');
     const totalSize = headRes.ContentLength;
     const fileExtension = path.extname(filename).toLowerCase();
     
@@ -1653,9 +1795,7 @@ fastify.get('/api/v1/file/:fileId', async (req, reply) => {
     }
 
     const s3Response = await s3.send(new GetObjectCommand(getObjectParams));
-    
-    // Convert S3 stream to Node.js readable stream
-    const stream = s3Response.Body;
+    let stream = s3Response.Body;
 
     // Handle stream errors
     stream.on('error', (err) => {
@@ -1667,8 +1807,13 @@ fastify.get('/api/v1/file/:fileId', async (req, reply) => {
         rangeStart,
         rangeEnd
       });
-      // Don't need to send response here as fastify will handle it
     });
+
+    // Decompress if needed
+    if (isCompressed) {
+      const gunzip = zlib.createGunzip();
+      stream = stream.pipe(gunzip);
+    }
 
     // Set response headers
     const responseHeaders = {
@@ -1685,19 +1830,8 @@ fastify.get('/api/v1/file/:fileId', async (req, reply) => {
       responseHeaders['Content-Length'] = rangeEnd - rangeStart + 1;
     } else {
       responseHeaders['Content-Length'] = totalSize;
-      responseHeaders['Accept-Ranges'] = 'bytes';
     }
 
-    // Handle conditional requests (If-None-Match, If-Modified-Since)
-    const ifNoneMatch = req.headers['if-none-match'];
-    const ifModifiedSince = req.headers['if-modified-since'];
-
-    if (ifNoneMatch === headRes.ETag || 
-        (ifModifiedSince && new Date(ifModifiedSince) >= new Date(headRes.LastModified))) {
-      return reply.code(304).headers(responseHeaders).send();
-    }
-
-    // Send the response
     return reply
       .code(isRangeRequest ? 206 : 200)
       .headers(responseHeaders)
@@ -1796,19 +1930,52 @@ fastify.post('/api/v1/upload', async (req, reply) => {
   for await (const file of await req.files()) {
     if (file.file.truncated) return reply.entityTooLarge('File too large');
     const filename = `${Date.now()}-${file.filename}`;
-    const buf = await file.toBuffer();
+    let fileBuffer = await file.toBuffer();
+    let contentType = file.mimetype || mime.lookup(filename) || 'application/octet-stream';
+    let contentLength = fileBuffer.length;
+    let isCompressed = false;
+
+    // Apply compression if enabled and file is large enough
+    if (COMPRESSION_ENABLED && fileBuffer.length >= COMPRESSION_THRESHOLD) {
+      try {
+        const compressed = await new Promise((resolve, reject) => {
+          zlib.gzip(fileBuffer, { level: COMPRESSION_LEVEL }, (err, result) => {
+            if (err) reject(err);
+            else resolve(result);
+          });
+        });
+        
+        // Only use compression if it actually reduced the size
+        if (compressed.length < fileBuffer.length) {
+          fileBuffer = compressed;
+          contentType = 'application/gzip';
+          contentLength = compressed.length;
+          isCompressed = true;
+        }
+      } catch (err) {
+        fastify.log.warn('Compression failed:', err);
+        // Continue with uncompressed file
+      }
+    }
+
     await s3.send(new PutObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
       Key: `folders/${folderId}/${filename}`,
-      Body: buf,
-      ContentType: file.mimetype || mime.lookup(filename) || 'application/octet-stream',
-      ContentLength: buf.length
+      Body: fileBuffer,
+      ContentType: contentType,
+      ContentLength: contentLength,
+      Metadata: {
+        'original-content-type': file.mimetype || mime.lookup(filename) || 'application/octet-stream',
+        'is-compressed': isCompressed.toString()
+      }
     }));
+
     uploadedFiles.push({
       id: `${folderId}:${filename}`,
       name: filename,
-      size: buf.length,
-      type: file.mimetype || 'application/octet-stream',
+      size: contentLength,
+      type: contentType,
+      isCompressed,
       url: `https://hackclub.maksimmalbasa.in.rs/api/v1/file/${folderId}:${filename}`
     });
   }
@@ -3178,7 +3345,7 @@ fastify.delete('/api/owner/delete-account', { preHandler: [fastify.authenticate]
     });
   }
 
-  // Delete user’s folders
+  // Delete user's folders
   const userFolders = await foldersColl.find({ owner: targetUsername }).toArray();
   for (const f of userFolders) {
     const objs = await listAllObjects(`folders/${f.folderId}/`);
@@ -3956,6 +4123,8 @@ const mailOptions = {
     return reply.internalServerError(`Email service error: ${errorMessage}. Please check server logs for details.`);
   }
 });
+
+  
 
 
 
