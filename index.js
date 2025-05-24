@@ -1984,7 +1984,27 @@ fastify.post('/api/v1/upload', async (req, reply) => {
   return reply.send({ files: uploadedFiles });
 });
 
+fastify.delete('/api/v1/delete/:folderId/:filename', async (req, reply) => {
+  const { folderId, filename } = req.params;
+  const apiKey = req.headers['x-api-key'];
+  const keyData = await validateApiKey(apiKey);
+  if (!keyData) return reply.code(401).send({ error: 'Invalid API key' });
 
+  const folder = await foldersColl.findOne({ folderId });
+  if (!folder) return reply.notFound('Folder not found');
+
+  const hasDelete = folder.owner === keyData.username ||
+    (folder.permissions?.[keyData.username]?.delete);
+  if (!hasDelete) return reply.forbidden('Access denied');
+
+  const key = `folders/${folderId}/${filename}`;
+  try {
+    await s3.send(new DeleteObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: key }));
+    return reply.send({ message: 'File deleted' });
+  } catch {
+    return reply.notFound('File not found');
+  }
+});
 // GET /api/v1/usage
 fastify.get('/api/v1/usage', async (req, reply) => {
   const apiKey = req.headers['x-api-key'];

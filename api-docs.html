@@ -217,6 +217,18 @@ X-API-Key: your-api-key-here
             </div>
 
             <div class="endpoint">
+                <span class="method delete">DELETE</span>
+                <strong>/api/v1/delete/:folderId/:filename</strong>
+                <p>Delete a file from a folder. Requires an API key and delete permission on the folder.</p>
+                <h4>Response:</h4>
+                <code>
+{
+    "message": "File deleted"
+}
+                </code>
+            </div>
+
+            <div class="endpoint">
                 <span class="method get">GET</span>
                 <strong>/api/v1/usage</strong>
                 <p>Get API usage statistics.</p>
