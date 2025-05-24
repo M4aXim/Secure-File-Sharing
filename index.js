@@ -64,6 +64,7 @@ let bannedIpsColl;
 let apiKeysColl;
 let foldersColl;
 let versionsColl;
+let groupsColl;
 
 
 
@@ -75,7 +76,8 @@ async function initMongo() {
     bannedIpsColl = db.collection('banned_ips');
     apiKeysColl   = db.collection('api_keys');
     foldersColl   = db.collection('folders');
-    versionsColl  = db.collection('versions'); // Add versions collection
+    versionsColl  = db.collection('versions');
+    groupsColl    = db.collection('groups');
     
     // Create indexes for better query performance
     await Promise.all([
@@ -93,16 +95,77 @@ async function initMongo() {
       foldersColl.createIndex({ createdAt: 1 }),
       foldersColl.createIndex({ 'invitedUsers.invitationId': 1 }),
       versionsColl.createIndex({ fileId: 1, versionNumber: 1 }, { unique: true }),
-      versionsColl.createIndex({ fileId: 1, isLatest: 1 })
+      versionsColl.createIndex({ fileId: 1, isLatest: 1 }),
+      versionsColl.createIndex({ 
+        originalName: 'text',
+        description: 'text',
+        tags: 'text'
+      }, {
+        weights: {
+          originalName: 10,
+          description: 5,
+          tags: 3
+        },
+        name: 'file_search'
+      }),
+      groupsColl.createIndex({ groupId: 1 }, { unique: true })
     ]);
     
     // Migrate folders from JSON file if needed
     await migrateFoldersFromFile();
+    await migrateGroupsFromFile();
+
     
     fastify.log.info('✅ Connected to MongoDB');
   } catch (err) {
     fastify.log.error('❌ MongoDB connection error:', err);
     process.exit(1);
+  }
+}
+
+
+async function migrateGroupsFromFile() {
+  try {
+    const count = await groupsColl.countDocuments();
+    if (count > 0) {
+      fastify.log.info('✅ Groups already exist in MongoDB, skipping migration');
+      return;
+    }
+
+    // Check if the groups JSON file exists
+    try {
+      await fsPromises.access(GROUPS_FILE);
+    } catch (err) {
+      fastify.log.info('No groups.json file found to migrate');
+      return;
+    }
+
+    // Read groups from JSON file
+    const data = await fsPromises.readFile(GROUPS_FILE, 'utf8');
+    const groups = JSON.parse(data);
+    if (!groups.length) {
+      fastify.log.info('No groups to migrate from groups.json');
+      return;
+    }
+
+    // Add timestamps and ensure data integrity
+    const groupsWithTimestamps = groups.map(group => ({
+      ...group,
+      createdAt: group.createdAt ? new Date(group.createdAt) : new Date(),
+      updatedAt: new Date()
+    }));
+
+    // Insert all groups into MongoDB
+    const result = await groupsColl.insertMany(groupsWithTimestamps);
+    fastify.log.info(`✅ Successfully migrated ${result.insertedCount} groups to MongoDB`);
+
+    // Create a backup of the original JSON file
+    const backupPath = `${GROUPS_FILE}.backup-${Date.now()}`;
+    await fsPromises.copyFile(GROUPS_FILE, backupPath);
+    fastify.log.info(`✅ Created backup of groups.json at ${backupPath}`);
+
+  } catch (err) {
+    fastify.log.error('❌ Error migrating groups to MongoDB:', err);
   }
 }
 
@@ -227,6 +290,8 @@ async function createFileVersion(fileId, originalName, versionData) {
       hash: versionData.hash,
       s3Key: versionData.s3Key,
       metadata: versionData.metadata || {},
+      tags: versionData.tags || [],
+      description: versionData.description || '',
       isLatest: true
     };
 
@@ -534,7 +599,6 @@ function sendEmailAsync(mailOptions) {
 
 // --- PATHS & CONSTANTS ---
 const AUDIT_LOG     = path.join(__dirname, 'audit.log');
-const GROUPS_FILE   = path.join(__dirname, 'groups.json');
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 
 // --- MEMORY BASED RATE LIMITER FOR CRITICAL ENDPOINTS ---
@@ -844,14 +908,6 @@ async function logActivity(req, activity, details = {}) {
 
 // --- BOOTSTRAP DATA FILES ---
 async function ensureDataFiles() {
-  try {
-    const GROUPS_FILE = path.join(__dirname, 'groups.json');
-    await fsPromises.access(GROUPS_FILE);
-  } catch {
-    await fsPromises.writeFile(GROUPS_FILE, JSON.stringify([], null, 2));
-    fastify.log.info('Created groups.json');
-
-  }
   try {
     await fsPromises.access(AUDIT_LOG);
   } catch {
@@ -1249,7 +1305,7 @@ fastify.post('/api/upload-file/:folderId', { preHandler: [fastify.authenticate] 
   // Group upload permission
   let hasGroupUploadPermission = false;
   if (!isOwner && !perms?.upload) {
-    const groupDocs = await groupsColl.find({ members: req.user.username }).toArray();
+    const groupDocs = await fs.readFile('groups.json', 'utf8');
     const myGroupIds = groupDocs.map(g => g.groupId);
     hasGroupUploadPermission = myGroupIds.some(id => folder.groupPermissions?.[id]?.upload === true);
   }
@@ -2094,8 +2150,6 @@ fastify.get('/api/shared-folders', { preHandler: [fastify.authenticate] }, async
 
 fastify.post('/api/groups/create', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { groupName, memberUsernames } = req.body;
-
-  // ----- validation -----
   if (!groupName || typeof groupName !== 'string')
     return reply.badRequest('groupName is required');
   if (!/^[\w\- ]{3,50}$/.test(groupName.trim()))
@@ -2103,37 +2157,34 @@ fastify.post('/api/groups/create', { preHandler: [fastify.authenticate] }, async
   if (!Array.isArray(memberUsernames) || memberUsernames.length < 2)
     return reply.badRequest('At least 2 other people are required');
 
-  // make usernames unique & include owner
   const uniqueUsernames = Array.from(new Set(memberUsernames.map(String))).filter(Boolean);
   if (!uniqueUsernames.includes(req.user.username)) uniqueUsernames.push(req.user.username);
 
-  // fetch user docs
   const users = await usersColl.find({ username: { $in: uniqueUsernames } }).toArray();
   if (users.length !== uniqueUsernames.length)
     return reply.notFound('One or more users not found');
 
-  // build group object
   const groupId = crypto.randomBytes(16).toString('hex');
   const owner   = req.user.username;
   const invited = users
     .filter(u => u.username !== owner)
-    .map(u => ({ invitationId: crypto.randomBytes(16).toString('hex'), username: u.username, email: u.email }));
+    .map(u => ({
+      invitationId: crypto.randomBytes(16).toString('hex'),
+      username:     u.username,
+      email:        u.email
+    }));
 
   const groupDoc = {
     groupId,
-    groupName: groupName.trim(),
+    groupName:    groupName.trim(),
     owner,
-    members:   [owner],           // owner is always member
-    invitedUsers: invited,        // pending invitations
-    createdAt: new Date().toISOString()
+    members:      [owner],
+    invitedUsers: invited,
+    createdAt:    new Date().toISOString()
   };
 
-  // persist to groups.json
-  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-  groups.push(groupDoc);
-  await fsPromises.writeFile(GROUPS_FILE, JSON.stringify(groups, null, 2));
+  await groupsColl.insertOne(groupDoc);
 
-  // send email invitations (best‑effort, fire‑and‑forget)
   for (const inv of invited) {
     sendEmailAsync({
       from: `"FileShare Groups" <${process.env.EMAIL_USER}>`,
@@ -2158,71 +2209,67 @@ Thank you.`
 
 fastify.get('/api/groups/accept/:invitationId', async (req, reply) => {
   const { invitationId } = req.params;
-
-  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-  const group  = groups.find(g => g.invitedUsers.some(i => i.invitationId === invitationId));
+  const group = await groupsColl.findOne({ 'invitedUsers.invitationId': invitationId });
   if (!group) return reply.notFound('Invitation not found');
 
-  // Get the invitee username from the invitation
   const invite = group.invitedUsers.find(i => i.invitationId === invitationId);
   const invitedUsername = invite.username;
 
-  // move from invited → members
-  group.invitedUsers = group.invitedUsers.filter(i => i.invitationId !== invitationId);
-  if (!group.members.includes(invitedUsername)) {s
-    group.members.push(invitedUsername);
-  }
+  await groupsColl.updateOne(
+    { groupId: group.groupId },
+    {
+      $pull: { invitedUsers: { invitationId } },
+      $addToSet: { members: invitedUsername }
+    }
+  );
 
-  await fsPromises.writeFile(GROUPS_FILE, JSON.stringify(groups, null, 2));
   await logActivity(req, 'accept-group-invite', { groupId: group.groupId, username: invitedUsername });
-
   return reply.send({ message: `Joined group "${group.groupName}"` });
 });
 
-fastify.get('/api/groups/reject/:invitationId', async (req, reply) => {
+fastify.get('/api/groups/reject/:invitationId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { invitationId } = req.params;
-
-  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-  const group  = groups.find(g => g.invitedUsers.some(i => i.invitationId === invitationId));
+  const group = await groupsColl.findOne({ 'invitedUsers.invitationId': invitationId });
   if (!group) return reply.notFound('Invitation not found');
 
-  // verify invitee matches requester
   const invite = group.invitedUsers.find(i => i.invitationId === invitationId);
   if (invite.username !== req.user.username) {
     return reply.forbidden("You are not this invitation's recipient");
   }
 
-  group.invitedUsers = group.invitedUsers.filter(i => i.invitationId !== invitationId);
-  await fsPromises.writeFile(GROUPS_FILE, JSON.stringify(groups, null, 2));
-  await logActivity(req, 'reject-group-invite', { groupId: group.groupId });
+  await groupsColl.updateOne(
+    { groupId: group.groupId },
+    { $pull: { invitedUsers: { invitationId } } }
+  );
 
+  await logActivity(req, 'reject-group-invite', { groupId: group.groupId });
   return reply.send({ message: 'Invitation rejected' });
 });
 
+// GET /api/groups/members/:groupId
 fastify.get('/api/groups/members/:groupId', { preHandler: [fastify.authenticate] }, async (req, reply) => {
   const { groupId } = req.params;
   if (!groupId) return reply.badRequest('Missing groupId');
 
-  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-  const group  = groups.find(g => g.groupId === groupId);
+  const group = await groupsColl.findOne({ groupId });
   if (!group) return reply.notFound('Group not found');
 
   const members = group.members.map(username => ({ username }));
   return { members };
 });
 
-fastify.get('/api/groups/view-current-permissions/:groupID/:folderID', { preHandler: [fastify.authenticate] }, async (req, reply) => {
-  const { groupID, folderID } = req.params;
-  if (!groupID || !folderID) return reply.badRequest('Missing groupID or folderID');
 
-  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-  const group  = groups.find(g => g.groupId === groupID);
+fastify.get('/api/groups/view-current-permissions/:groupID/:folderID', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { groupID: groupId, folderID: folderId } = req.params;
+  if (!groupId || !folderId) return reply.badRequest('Missing groupID or folderID');
+
+  const group = await groupsColl.findOne({ groupId });
   if (!group) return reply.notFound('Group not found');
-  const folders = await foldersColl.find({ groupId: groupID }).toArray();
-  const folder = folders.find(f => f.folderId === folderID);
+
+  const folder = await foldersColl.findOne({ folderId });
   if (!folder) return reply.notFound('Folder not found');
 
-  const permissions = folder.groupPermissions?.[groupID] || {};
+  const permissions = folder.groupPermissions?.[groupId] || {};
   return { permissions };
 });
 
@@ -2257,10 +2304,9 @@ fastify.put('/api/folders/:folderId/groups/:groupId/permissions',
 );
 
 fastify.get('/api/show-group-I-created', { preHandler: [fastify.authenticate] }, async (req, reply) => {
-  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-  const myGroups = groups.filter(g => g.owner === req.user.username);
+  const groups = await groupsColl.find({ owner: req.user.username }).toArray();
 
-  return myGroups.map(group => ({
+  return groups.map(group => ({
     groupId: group.groupId,
     groupName: group.groupName,
     members: group.members.map(username => ({ username }))
@@ -2270,8 +2316,7 @@ fastify.get('/api/show-groups-permissions', { preHandler: [fastify.authenticate]
   const { groupId } = req.query;
   if (!groupId) return reply.badRequest('Missing groupId');
 
-  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-  const group  = groups.find(g => g.groupId === groupId);
+  const group  = await groupsColl.findOne({ groupId });
   if (!group) return reply.notFound('Group not found');
 
   const permissions = group.groupPermissions || {};
@@ -2768,9 +2813,8 @@ fastify.get('/api/folder-contents', async (req, reply) => {
       if (friendPerms?.view || friendPerms?.download) allowed = true;
 
       if (!allowed) {
-        const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-        const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
-        const groupPermOk = myGroupIds.some(id => meta.groupPermissions?.[id]?.view === true);
+        const myGroups = await groupsColl.find({ members: req.user.username }).toArray();
+        const groupPermOk = myGroups.some(g => meta.groupPermissions?.[g.groupId]?.view === true);
         if (groupPermOk) allowed = true;
       }
     }
@@ -3212,8 +3256,7 @@ fastify.get('/api/staff/groups/:groupId/activity', { preHandler: [fastify.authen
   const { groupId } = req.params;
   
   // Verify group exists
-  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-  const group = groups.find(g => g.groupId === groupId);
+  const group = await groupsColl.findOne({ groupId });
   if (!group) return reply.notFound('Group not found');
   
   // Get audit logs for this group
@@ -3248,8 +3291,7 @@ fastify.post('/api/staff/groups/:groupId/flag', { preHandler: [fastify.authentic
   
   if (!reason) return reply.badRequest('Reason is required');
   
-  const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-  const group = groups.find(g => g.groupId === groupId);
+  const group = await groupsColl.findOne({ groupId });
   if (!group) return reply.notFound('Group not found');
   
   group.flagged = true;
@@ -3257,7 +3299,7 @@ fastify.post('/api/staff/groups/:groupId/flag', { preHandler: [fastify.authentic
   group.flaggedBy = req.user.username;
   group.flaggedAt = new Date().toISOString();
   
-  await fsPromises.writeFile(GROUPS_FILE, JSON.stringify(groups, null, 2));
+  await groupsColl.updateOne({ groupId }, { $set: group });
   
   // Notify owner
   try {
@@ -3589,7 +3631,7 @@ fastify.get('/api/owner/export/groups', { preHandler: [fastify.authenticate] }, 
   }
 
   try {
-    const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
+    const groups = await groupsColl.find({}).toArray();
     
     // Transform data for Excel
     const excelData = groups.map(group => ({
@@ -3715,11 +3757,10 @@ fastify.get('/api/thumbnail/:folderId/*', async (req, reply) => {
       if (friendPerms?.view || friendPerms?.download) allowed = true;
 
       if (!allowed) {
-        const groups = JSON.parse(await fsPromises.readFile(GROUPS_FILE, 'utf8'));
-        const myGroupIds = groups.filter(g => g.members.includes(req.user.username)).map(g => g.groupId);
-        const groupPermOk = myGroupIds.some(id => 
-          meta.groupPermissions?.[id]?.view === true || 
-          meta.groupPermissions?.[id]?.download === true
+        const myGroups = await groupsColl.find({ members: req.user.username }).toArray();
+        const groupPermOk = myGroups.some(g => 
+          meta.groupPermissions?.[g.groupId]?.view === true || 
+          meta.groupPermissions?.[g.groupId]?.download === true
         );
         if (groupPermOk) allowed = true;
       }
@@ -4144,6 +4185,98 @@ const mailOptions = {
   }
 });
 
+fastify.get('/api/search', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  try {
+    const { query, page = 1, limit = 20 } = req.query;
+    if (!query) {
+      return reply.badRequest('Search query is required');
+    }
+
+    const skip = (page - 1) * limit;
+    
+    // Perform text search
+    const searchResults = await versionsColl.find(
+      { 
+        $text: { $search: query },
+        isLatest: true // Only search latest versions
+      },
+      { 
+        score: { $meta: "textScore" },
+        originalName: 1,
+        description: 1,
+        tags: 1,
+        fileId: 1,
+        versionNumber: 1,
+        createdAt: 1,
+        size: 1,
+        mimeType: 1
+      }
+    )
+    .sort({ score: { $meta: "textScore" } })
+    .skip(skip)
+    .limit(parseInt(limit))
+    .toArray();
+
+    // Get total count for pagination
+    const totalCount = await versionsColl.countDocuments({
+      $text: { $search: query },
+      isLatest: true
+    });
+
+    // Get folder information for each file
+    const results = await Promise.all(searchResults.map(async (file) => {
+      const folder = await foldersColl.findOne({ folderId: file.fileId.split(':')[0] });
+      if (!folder) return null;
+
+      // Check permissions
+      const isOwner = folder.owner === req.user.username;
+      const perms = folder.friendPermissions?.[req.user.username];
+      
+      let hasAccess = folder.isPublic || isOwner || perms?.view || perms?.download;
+      
+      if (!hasAccess) {
+        const groupDocs = await groupsColl.find({ members: req.user.username }).toArray();
+        const myGroupIds = groupDocs.map(g => g.groupId);
+        hasAccess = myGroupIds.some(id => 
+          folder.groupPermissions?.[id]?.view || 
+          folder.groupPermissions?.[id]?.download
+        );
+      }
+
+      if (!hasAccess) return null;
+
+      return {
+        id: file.fileId,
+        name: file.originalName,
+        description: file.description,
+        tags: file.tags,
+        size: file.size,
+        type: file.mimeType,
+        createdAt: file.createdAt,
+        folderName: folder.folderName,
+        folderId: folder.folderId,
+        score: file.score
+      };
+    }));
+
+    // Filter out null results (files user doesn't have access to)
+    const filteredResults = results.filter(r => r !== null);
+
+    return reply.send({
+      results: filteredResults,
+      pagination: {
+        total: totalCount,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(totalCount / limit)
+      }
+    });
+  } catch (err) {
+    fastify.log.error('Search error:', err);
+    return reply.internalServerError('Error performing search');
+  }
+});
+
   
 
 
@@ -4311,3 +4444,4 @@ const start = async () => {
 };
 
 start();
+
