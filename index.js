@@ -259,13 +259,85 @@ async function validateApiKey(key) {
   const apiKey = await apiKeysColl.findOne({ key, isActive: true });
   if (!apiKey) return null;
   
+  // Check for abuse patterns
+  const now = new Date();
+  const oneMinuteAgo = new Date(now - 60000);
+  const fiveMinutesAgo = new Date(now - 300000);
+  
+  // Get recent usage
+  const recentUsage = await apiKeysColl.aggregate([
+    { $match: { _id: apiKey._id } },
+    { $project: {
+      lastMinute: {
+        $filter: {
+          input: "$usageHistory",
+          as: "usage",
+          cond: { $gte: ["$$usage.timestamp", oneMinuteAgo] }
+        }
+      },
+      lastFiveMinutes: {
+        $filter: {
+          input: "$usageHistory",
+          as: "usage",
+          cond: { $gte: ["$$usage.timestamp", fiveMinutesAgo] }
+        }
+      }
+    }}
+  ]).toArray();
+
+  const lastMinuteCount = recentUsage[0]?.lastMinute?.length || 0;
+  const lastFiveMinutesCount = recentUsage[0]?.lastFiveMinutes?.length || 0;
+
+  // Define abuse thresholds
+  const ABUSE_THRESHOLDS = {
+    requestsPerMinute: 100,  // General rate limit
+    requestsPerFiveMinutes: 400,  // Burst protection
+    consecutiveErrors: 50  // Error rate threshold
+  };
+
+  // Check for abuse patterns
+  if (lastMinuteCount > ABUSE_THRESHOLDS.requestsPerMinute || 
+      lastFiveMinutesCount > ABUSE_THRESHOLDS.requestsPerFiveMinutes) {
+    
+    await autoHandleAPIKeyAbuse(key, {
+      type: 'rate_limit_exceeded',
+      details: {
+        lastMinuteCount,
+        lastFiveMinutesCount,
+        thresholds: ABUSE_THRESHOLDS
+      }
+    });
+    return null;
+  }
+  
+  // Update usage history
   await apiKeysColl.updateOne(
     { _id: apiKey._id },
     { 
-      $set: { lastUsed: new Date() },
-      $inc: { usageCount: 1 }
+      $set: { lastUsed: now },
+      $inc: { usageCount: 1 },
+      $push: { 
+        usageHistory: {
+          timestamp: now,
+          endpoint: 'api_request'
+        }
+      }
     }
   );
+
+  // Clean up old usage history (keep last 24 hours)
+  const oneDayAgo = new Date(now - 86400000);
+  await apiKeysColl.updateOne(
+    { _id: apiKey._id },
+    {
+      $pull: {
+        usageHistory: {
+          timestamp: { $lt: oneDayAgo }
+        }
+      }
+    }
+  );
+
   return apiKey;
 }
 
@@ -4185,85 +4257,95 @@ const mailOptions = {
   }
 });
 
-fastify.get('/api/search', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+fastify.get('/api/search', async (req, reply) => {
   try {
     const { query, page = 1, limit = 20 } = req.query;
     if (!query) {
       return reply.badRequest('Search query is required');
     }
 
-    const skip = (page - 1) * limit;
-    
-    // Perform text search
-    const searchResults = await versionsColl.find(
-      { 
-        $text: { $search: query },
-        isLatest: true // Only search latest versions
-      },
-      { 
-        score: { $meta: "textScore" },
-        originalName: 1,
-        description: 1,
-        tags: 1,
-        fileId: 1,
-        versionNumber: 1,
-        createdAt: 1,
-        size: 1,
-        mimeType: 1
-      }
-    )
-    .sort({ score: { $meta: "textScore" } })
-    .skip(skip)
-    .limit(parseInt(limit))
-    .toArray();
+    // Validate API key
+    const apiKey = req.headers['x-api-key'];
+    const keyData = await validateApiKey(apiKey);
+    if (!keyData) {
+      return reply.code(401).send({ error: 'Invalid API key' });
+    }
 
-    // Get total count for pagination
-    const totalCount = await versionsColl.countDocuments({
-      $text: { $search: query },
-      isLatest: true
-    });
+    const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Get folder information for each file
-    const results = await Promise.all(searchResults.map(async (file) => {
-      const folder = await foldersColl.findOne({ folderId: file.fileId.split(':')[0] });
-      if (!folder) return null;
+    // Get all folders the user has access to
+    const userFolders = await foldersColl.find({
+      $or: [
+        { owner: keyData.username },
+        { isPublic: true },
+        { [`friendPermissions.${keyData.username}.view`]: true },
+        { [`friendPermissions.${keyData.username}.download`]: true }
+      ]
+    }).toArray();
 
-      // Check permissions
-      const isOwner = folder.owner === req.user.username;
-      const perms = folder.friendPermissions?.[req.user.username];
-      
-      let hasAccess = folder.isPublic || isOwner || perms?.view || perms?.download;
-      
-      if (!hasAccess) {
-        const groupDocs = await groupsColl.find({ members: req.user.username }).toArray();
-        const myGroupIds = groupDocs.map(g => g.groupId);
-        hasAccess = myGroupIds.some(id => 
-          folder.groupPermissions?.[id]?.view || 
-          folder.groupPermissions?.[id]?.download
-        );
-      }
+    // Get group permissions
+    const groupDocs = await groupsColl.find({ members: keyData.username }).toArray();
+    const myGroupIds = groupDocs.map(g => g.groupId);
 
-      if (!hasAccess) return null;
+    // Add folders with group permissions
+    const groupFolders = await foldersColl.find({
+      $or: myGroupIds.map(groupId => ({
+        [`groupPermissions.${groupId}.view`]: true,
+        [`groupPermissions.${groupId}.download`]: true
+      }))
+    }).toArray();
 
-      return {
-        id: file.fileId,
-        name: file.originalName,
-        description: file.description,
-        tags: file.tags,
-        size: file.size,
-        type: file.mimeType,
-        createdAt: file.createdAt,
-        folderName: folder.folderName,
-        folderId: folder.folderId,
-        score: file.score
-      };
-    }));
+    // Combine and deduplicate folders
+    const allFolders = [...userFolders, ...groupFolders];
+    const uniqueFolders = Array.from(new Map(allFolders.map(f => [f.folderId, f])).values());
 
-    // Filter out null results (files user doesn't have access to)
-    const filteredResults = results.filter(r => r !== null);
+    // Search through files in each folder
+    const searchResults = [];
+    for (const folder of uniqueFolders) {
+      const data = await s3.send(new ListObjectsV2Command({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Prefix: `folders/${folder.folderId}/`
+      }));
+
+      if (!data.Contents) continue;
+
+      // Filter files by name and add to results
+      const matchingFiles = data.Contents
+        .filter(obj => {
+          const filename = obj.Key.slice(`folders/${folder.folderId}/`.length);
+          return filename && filename.toLowerCase().includes(query.toLowerCase());
+        })
+        .map(obj => {
+          const filename = obj.Key.slice(`folders/${folder.folderId}/`.length);
+          return {
+            id: `${folder.folderId}:${filename}`,
+            name: filename,
+            size: obj.Size,
+            type: mime.lookup(filename) || 'application/octet-stream',
+            lastModified: obj.LastModified.toISOString(),
+            folderName: folder.folderName,
+            folderId: folder.folderId
+          };
+        });
+
+      searchResults.push(...matchingFiles);
+    }
+
+    // Sort results by last modified date
+    searchResults.sort((a, b) => new Date(b.lastModified) - new Date(a.lastModified));
+
+    // Apply pagination
+    const totalCount = searchResults.length;
+    const paginatedResults = searchResults.slice(skip, skip + parseInt(limit));
+
+    // Update API key usage count
+    await apiKeysColl.updateOne(
+      { _id: keyData._id },
+      { $inc: { usageCount: 1 } }
+    );
 
     return reply.send({
-      results: filteredResults,
+      results: paginatedResults,
       pagination: {
         total: totalCount,
         page: parseInt(page),
@@ -4277,6 +4359,105 @@ fastify.get('/api/search', { preHandler: [fastify.authenticate] }, async (req, r
   }
 });
 
+fastify.post('/owner/revoke-api-key', { preHandler: [fastify.authenticate] }, async (req, reply) => {
+  const { apiKey } = req.body;
+  if (req.user.username !== process.env.OWNER_USERNAME) {
+    return reply.forbidden('Only the owner can revoke API keys');
+  }
+
+  const keyData = await validateApiKey(apiKey);
+  if (!keyData) {
+    return reply.code(401).send({ error: 'Invalid API key' });
+  }
+
+  await apiKeysColl.deleteOne({ _id: keyData._id });
+  return reply.send({ message: 'API key revoked successfully' });
+});
+
+async function autoHandleAPIKeyAbuse(apiKey, abuseDetails) {
+  // Look up the API key document
+  const apiKeyDoc = await apiKeysColl.findOne({ key: apiKey });
+  if (!apiKeyDoc) return;
+
+  // Automatically disable the API key
+  await apiKeysColl.updateOne(
+    { _id: apiKeyDoc._id },
+    { 
+      $set: { 
+        disabled: true,
+        disabledReason: `Automatic suspension due to ${abuseDetails.type}`,
+        disabledAt: new Date(),
+        abuseDetails: abuseDetails
+      }
+    }
+  );
+
+  // Look up the owner's email address from database
+  const ownerDoc = await usersColl.findOne({ username: process.env.OWNER_USERNAME });
+  if (!ownerDoc || !ownerDoc.email) return;
+
+  // Format abuse details for email
+  let abuseMessage = '';
+  switch (abuseDetails.type) {
+    case 'rate_limit_exceeded':
+      abuseMessage = `
+Rate limit exceeded:
+- Requests in last minute: ${abuseDetails.details.lastMinuteCount} (limit: ${abuseDetails.details.thresholds.requestsPerMinute})
+- Requests in last 5 minutes: ${abuseDetails.details.lastFiveMinutesCount} (limit: ${abuseDetails.details.thresholds.requestsPerFiveMinutes})
+`;
+      break;
+    default:
+      abuseMessage = JSON.stringify(abuseDetails, null, 2);
+  }
+
+  // Compose and send the notification email
+  const mailOptions = {
+    from: `"FileShare Security" <${process.env.EMAIL_USER}>`,
+    to: ownerDoc.email,
+    subject: `🚫 API Key Automatically Suspended: ${apiKey}`,
+    text: [
+      `Hello ${process.env.OWNER_USERNAME},`,
+      ``,
+      `An API key has been automatically suspended due to detected abuse:`,
+      ``,
+      `API Key: ${apiKey}`,
+      `Created by: ${apiKeyDoc.username}`,
+      `Description: ${apiKeyDoc.description || 'No description'}`,
+      `Created: ${apiKeyDoc.created.toISOString()}`,
+      `Total requests: ${apiKeyDoc.usageCount}`,
+      ``,
+      `Abuse Details:`,
+      abuseMessage,
+      ``,
+      `The key has been automatically disabled. You can review the details in the admin dashboard.`,
+      ``,
+      `Best regards,`,
+      `FileShare Security System`
+    ].join('\n')
+  };
+
+  try {
+    await sendEmailAsync(mailOptions);
+  } catch (err) {
+    fastify.log.error(`Failed to send abuse notification email: ${err.message}`);
+  }
+
+  // Log the abuse event
+  try {
+    await logActivity(
+      { user: 'system' },
+      'api-key-auto-disabled',
+      {
+        apiKey,
+        username: apiKeyDoc.username,
+        abuseType: abuseDetails.type,
+        details: abuseDetails
+      }
+    );
+  } catch (err) {
+    fastify.log.error(`Failed to log API key abuse: ${err.message}`);
+  }
+}
   
 
 
