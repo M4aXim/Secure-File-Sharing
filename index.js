@@ -3087,6 +3087,124 @@ fastify.get('/api/staff/get-for-all-folders-ID',
     return { folders: docs };
 });
 
+fastify.post('/api/staff/monitor-api-keys', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  try {
+    const { username, isActive, startDate, endDate } = req.body;
+    
+    // Build query based on filters
+    const query = {};
+    if (username) query.username = username;
+    if (isActive !== undefined) query.isActive = isActive;
+    if (startDate || endDate) {
+      query.created = {};
+      if (startDate) query.created.$gte = new Date(startDate);
+      if (endDate) query.created.$lte = new Date(endDate);
+    }
+
+    // Get API keys with sensitive data excluded
+    const keys = await apiKeysColl.find(
+      query,
+      { 
+        projection: { 
+          key: 0, // Exclude the actual API key
+          username: 1,
+          description: 1,
+          created: 1,
+          lastUsed: 1,
+          usageCount: 1,
+          isActive: 1,
+          disabledReason: 1,
+          disabledAt: 1,
+          abuseDetails: 1
+        }
+      }
+    ).toArray();
+
+    // Log the activity
+    await logActivity(req, 'staff-view-api-keys', { 
+      filters: { username, isActive, startDate, endDate },
+      count: keys.length 
+    });
+
+    return reply.send({ keys });
+  } catch (error) {
+    console.error('Error monitoring API keys:', error);
+    return reply.internalServerError('Error monitoring API keys');
+  }
+});
+
+fastify.post('/api/staff/flag-api-key', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
+  try {
+    const { username, reason } = req.body;
+    
+    if (!username || !reason) {
+      return reply.badRequest('Username and reason are required');
+    }
+
+    // Find the user and their API keys
+    const user = await usersColl.findOne({ username });
+    if (!user) {
+      return reply.notFound('User not found');
+    }
+
+    // Get all active API keys for the user
+    const apiKeys = await apiKeysColl.find({ 
+      username,
+      isActive: true 
+    }).toArray();
+
+    if (apiKeys.length === 0) {
+      return reply.notFound('No active API keys found for this user');
+    }
+
+    // Flag all active API keys
+    await apiKeysColl.updateMany(
+      { username, isActive: true },
+      { 
+        $set: { 
+          isActive: false,
+          flagged: true,
+          flaggedBy: req.user.username,
+          flaggedAt: new Date(),
+          flagReason: reason
+        }
+      }
+    );
+
+    // Get owner's email
+    const owner = await usersColl.findOne({ username: process.env.OWNER_USERNAME });
+    if (!owner?.email) {
+      return reply.internalServerError('Owner email not found');
+    }
+
+    // Send email notification
+    sendEmailAsync({
+      from: `"FileShare Security" <${process.env.EMAIL_USER}>`,
+      to: owner.email,
+      cc: req.user.email,
+      subject: 'API Key Flagged by Staff Member',
+      text: `Staff member ${req.user.username} (${req.user.email}) has flagged API keys for user: ${username} (${user.email})\n\nReason: ${reason}\n\nAll active API keys for this user have been deactivated.`
+    });
+
+    // Log the activity
+    await logActivity(req, 'staff-flag-api-keys', { 
+      targetUsername: username,
+      reason,
+      affectedKeys: apiKeys.length
+    });
+
+    return reply.send({ 
+      message: 'API keys flagged successfully',
+      affectedKeys: apiKeys.length
+    });
+  } catch (error) {
+    console.error('Error flagging API keys:', error);
+    return reply.internalServerError('Error flagging API keys');
+  }
+});
+
+
+
 // GET /api/staff/folder-contents
 fastify.get('/api/staff/folder-contents', { preHandler: [fastify.authenticate, fastify.verifyStaff] }, async (req, reply) => {
   const folderId = req.query.folderId;
@@ -4625,4 +4743,3 @@ const start = async () => {
 };
 
 start();
-

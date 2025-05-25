@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Key Management - FileShare Staff</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <style>
+        .navbar {
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+            padding: 1rem;
+        }
+        
+        .navbar-item {
+            color: white !important;
+        }
+        
+        .navbar-item:hover {
+            background-color: rgba(255, 255, 255, 0.1) !important;
+        }
+        
+        .navbar-item.is-active {
+            background-color: rgba(255, 255, 255, 0.2) !important;
+        }
+        
+        .card {
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-4px);
+        }
+        
+        .api-key-item {
+            border-left: 4px solid #2575fc;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+        
+        .api-key-item.flagged {
+            border-left-color: #ff4d4f;
+        }
+        
+        .api-key-item.disabled {
+            border-left-color: #d9d9d9;
+        }
+        
+        .filter-section {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+        
+        .flag-modal .modal-content {
+            border-radius: 12px;
+            max-width: 500px;
+        }
+        
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            max-width: 400px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar" role="navigation" aria-label="main navigation">
+        <div class="navbar-brand">
+            <a class="navbar-item" href="/">
+                <i class="fas fa-cloud-upload-alt mr-2"></i>
+                <strong>FileShare</strong>
+            </a>
+        </div>
+        <div class="navbar-menu">
+            <div class="navbar-start">
+                <a class="navbar-item" href="/dashboard">
+                    <i class="fas fa-tachometer-alt mr-1"></i> Dashboard
+                </a>
+                <a class="navbar-item is-active" href="/staff/api-key-management.html">
+                    <i class="fas fa-key mr-1"></i> API Keys
+                </a>
+            </div>
+            <div class="navbar-end">
+                <div class="navbar-item">
+                    <div class="buttons">
+                        <button class="button is-light" id="logout-btn">
+                            <i class="fas fa-sign-out-alt mr-1"></i> Logout
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <section class="section">
+        <div class="container">
+            <h1 class="title has-text-centered">
+                <i class="fas fa-key mr-2 has-text-primary"></i>API Key Management
+            </h1>
+            <p class="subtitle has-text-centered">Monitor and manage API keys across the platform</p>
+
+            <!-- Filter Section -->
+            <div class="filter-section">
+                <div class="columns is-multiline">
+                    <div class="column is-4">
+                        <div class="field">
+                            <label class="label">Username</label>
+                            <div class="control">
+                                <input class="input" type="text" id="username-filter" placeholder="Filter by username">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="column is-4">
+                        <div class="field">
+                            <label class="label">Status</label>
+                            <div class="control">
+                                <div class="select is-fullwidth">
+                                    <select id="status-filter">
+                                        <option value="">All</option>
+                                        <option value="true">Active</option>
+                                        <option value="false">Inactive</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="column is-4">
+                        <div class="field">
+                            <label class="label">Date Range</label>
+                            <div class="control">
+                                <input class="input" type="date" id="date-filter">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="field is-grouped is-grouped-right">
+                    <div class="control">
+                        <button class="button is-primary" id="apply-filters">
+                            <span class="icon">
+                                <i class="fas fa-filter"></i>
+                            </span>
+                            <span>Apply Filters</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Keys List -->
+            <div id="api-keys-list">
+                <!-- API keys will be loaded here -->
+            </div>
+        </div>
+    </section>
+
+    <!-- Flag API Key Modal -->
+    <div class="modal flag-modal" id="flag-modal">
+        <div class="modal-background"></div>
+        <div class="modal-content">
+            <div class="box">
+                <h3 class="title is-4">Flag API Key</h3>
+                <div class="field">
+                    <label class="label">Username</label>
+                    <div class="control">
+                        <input class="input" type="text" id="flag-username" readonly>
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="label">Reason</label>
+                    <div class="control">
+                        <textarea class="textarea" id="flag-reason" placeholder="Enter reason for flagging this API key"></textarea>
+                    </div>
+                </div>
+                <div class="field is-grouped is-grouped-right">
+                    <div class="control">
+                        <button class="button" id="cancel-flag">Cancel</button>
+                    </div>
+                    <div class="control">
+                        <button class="button is-danger" id="confirm-flag">Flag API Key</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <button class="modal-close is-large" aria-label="close"></button>
+    </div>
+
+    <script>
+        // Check authentication
+        const token = localStorage.getItem('jwtToken');
+        if (!token) {
+            window.location.href = '/index.html';
+        }
+
+        // Load API keys
+        async function loadApiKeys() {
+            try {
+                const username = document.getElementById('username-filter').value;
+                const isActive = document.getElementById('status-filter').value;
+                const date = document.getElementById('date-filter').value;
+
+                const response = await fetch('/api/staff/monitor-api-keys', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: username || undefined,
+                        isActive: isActive === '' ? undefined : isActive === 'true',
+                        startDate: date || undefined
+                    })
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        localStorage.removeItem('jwtToken');
+                        window.location.href = '/index.html';
+                        return;
+                    }
+                    throw new Error('Failed to load API keys');
+                }
+
+                const data = await response.json();
+                const keysList = document.getElementById('api-keys-list');
+                keysList.innerHTML = '';
+
+                if (data.keys.length === 0) {
+                    keysList.innerHTML = `
+                        <div class="notification is-info">
+                            <button class="delete"></button>
+                            No API keys found matching the current filters.
+                        </div>
+                    `;
+                    return;
+                }
+
+                data.keys.forEach(key => {
+                    const keyElement = document.createElement('div');
+                    keyElement.className = `api-key-item ${!key.isActive ? 'disabled' : ''} ${key.flagged ? 'flagged' : ''}`;
+                    keyElement.innerHTML = `
+                        <div class="columns is-multiline">
+                            <div class="column is-6">
+                                <h4 class="title is-5">${key.username}</h4>
+                                <p class="subtitle is-6">${key.description || 'No description'}</p>
+                            </div>
+                            <div class="column is-6">
+                                <div class="tags has-addons is-pulled-right">
+                                    <span class="tag ${key.isActive ? 'is-success' : 'is-danger'}">
+                                        ${key.isActive ? 'Active' : 'Inactive'}
+                                    </span>
+                                    ${key.flagged ? '<span class="tag is-danger">Flagged</span>' : ''}
+                                </div>
+                            </div>
+                            <div class="column is-12">
+                                <div class="level">
+                                    <div class="level-left">
+                                        <div class="level-item">
+                                            <div class="tags">
+                                                <span class="tag is-info">
+                                                    <span class="icon"><i class="fas fa-calendar"></i></span>
+                                                    <span>Created: ${new Date(key.created).toLocaleDateString()}</span>
+                                                </span>
+                                                <span class="tag is-info">
+                                                    <span class="icon"><i class="fas fa-clock"></i></span>
+                                                    <span>Last Used: ${key.lastUsed ? new Date(key.lastUsed).toLocaleString() : 'Never'}</span>
+                                                </span>
+                                                <span class="tag is-info">
+                                                    <span class="icon"><i class="fas fa-chart-bar"></i></span>
+                                                    <span>Usage: ${key.usageCount || 0}</span>
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="level-right">
+                                        <div class="level-item">
+                                            ${key.isActive ? `
+                                                <button class="button is-danger is-small" onclick="showFlagModal('${key.username}')">
+                                                    <span class="icon"><i class="fas fa-flag"></i></span>
+                                                    <span>Flag</span>
+                                                </button>
+                                            ` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    keysList.appendChild(keyElement);
+                });
+            } catch (error) {
+                console.error('Error loading API keys:', error);
+                showNotification('Failed to load API keys', 'is-danger');
+            }
+        }
+
+        // Show flag modal
+        function showFlagModal(username) {
+            document.getElementById('flag-username').value = username;
+            document.getElementById('flag-modal').classList.add('is-active');
+        }
+
+        // Hide flag modal
+        function hideFlagModal() {
+            document.getElementById('flag-modal').classList.remove('is-active');
+            document.getElementById('flag-reason').value = '';
+        }
+
+        // Flag API key
+        async function flagApiKey() {
+            const username = document.getElementById('flag-username').value;
+            const reason = document.getElementById('flag-reason').value;
+
+            if (!reason) {
+                showNotification('Please provide a reason for flagging', 'is-warning');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/staff/flag-api-key', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, reason })
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        localStorage.removeItem('jwtToken');
+                        window.location.href = '/index.html';
+                        return;
+                    }
+                    throw new Error('Failed to flag API key');
+                }
+
+                const data = await response.json();
+                showNotification(`Successfully flagged ${data.affectedKeys} API key(s)`, 'is-success');
+                hideFlagModal();
+                loadApiKeys();
+            } catch (error) {
+                console.error('Error flagging API key:', error);
+                showNotification('Failed to flag API key', 'is-danger');
+            }
+        }
+
+        // Show notification
+        function showNotification(message, type = 'is-info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.innerHTML = `
+                <button class="delete"></button>
+                ${message}
+            `;
+            document.body.appendChild(notification);
+
+            // Auto remove after 5 seconds
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+
+            // Handle close button
+            notification.querySelector('.delete').addEventListener('click', () => {
+                notification.remove();
+            });
+        }
+
+        // Event Listeners
+        document.getElementById('apply-filters').addEventListener('click', loadApiKeys);
+        document.getElementById('cancel-flag').addEventListener('click', hideFlagModal);
+        document.getElementById('confirm-flag').addEventListener('click', flagApiKey);
+        document.querySelector('.modal-close').addEventListener('click', hideFlagModal);
+        document.getElementById('logout-btn').addEventListener('click', () => {
+            localStorage.removeItem('jwtToken');
+            window.location.href = '/index.html';
+        });
+
+        // Initial load
+        loadApiKeys();
+    </script>
+</body>
+</html>
