@@ -2660,13 +2660,16 @@ fastify.get('/api/show-friends/:folderId', { preHandler: [fastify.authenticate] 
   if (!folder) return reply.notFound('Folder not found');
 
   const isOwner = folder.owner === req.user.username;
-  const isFriend = Array.isArray(folder.friends) && folder.friends.includes(req.user.username);
+  const isFriend = folder.friendPermissions?.[req.user.username];
   if (!isOwner && !isFriend) return reply.forbidden('Access denied');
 
-  const friends = folder.friends || [];
+  // Get friends from friendPermissions
+  const friends = Object.keys(folder.friendPermissions || {});
 
-  if (isOwner && folder.invitationId && folder.invitedUsername) {
-    friends.push(folder.invitedUsername);
+  // Add invited users if owner
+  if (isOwner && folder.invitedUsers?.length > 0) {
+    const invitedUsernames = folder.invitedUsers.map(invite => invite.username);
+    friends.push(...invitedUsernames);
   }
 
   await logActivity(req, 'view-friends', { folderId });
