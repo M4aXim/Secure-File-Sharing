@@ -847,7 +847,18 @@ const ipRateLimiter = {
 setInterval(() => ipRateLimiter.clean(), 600000); // Every 10 minutes
 
 // --- PLUGINS ---
-fastify.register(require('@fastify/cors'),   { origin: '*', methods: ['GET','POST','PUT','DELETE'] });
+fastify.register(require('@fastify/cors'), {
+  origin: (origin, cb) => {
+    const allowedOrigins = ['http://localhost:1420', 'tauri://localhost', 'https://hackclub.maksimmalbasa.in.rs'];
+    if (!origin || allowedOrigins.includes(origin)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Not allowed by CORS"), false);
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true
+});
 fastify.register(require('@fastify/formbody'));
 fastify.register(require('@fastify/multipart'), { limits: { fileSize: MAX_FILE_SIZE, files: 1 } });
 fastify.register(require('@fastify/sensible'));
